@@ -1,8 +1,65 @@
 #pragma once
 #include <Elasticity/component/ElementMass.h>
+#include <Elasticity/impl/VectorTools.h>
 
 namespace elasticity
 {
+
+template <class DataTypes, class ElementType>
+ElementMass<DataTypes, ElementType>::ElementMass()
+    : d_nodalDensity(initData(&d_nodalDensity, {defaultNodalDensity}, "nodalDensity", "Scalar density assigned to each node. The density is interpolated between nodes using the element shape functions."))
+{
+}
+
+template <class DataTypes, class ElementType>
+void ElementMass<DataTypes, ElementType>::init()
+{
+    sofa::core::behavior::Mass<DataTypes>::init();
+
+    if (!this->isComponentStateInvalid())
+    {
+        sofa::core::behavior::TopologyAccessor::init();
+    }
+
+    if (!this->isComponentStateInvalid() && this->mstate)
+    {
+        this->resizeNodalDensity(this->mstate->getSize());
+    }
+
+    if (!this->isComponentStateInvalid())
+    {
+        this->d_componentState.setValue(sofa::core::objectmodel::ComponentState::Valid);
+    }
+}
+
+template <class DataTypes, class ElementType>
+void ElementMass<DataTypes, ElementType>::resizeNodalDensity(const std::size_t size)
+{
+    sofa::helper::WriteAccessor nodalDensity = sofa::helper::getWriteAccessor( d_nodalDensity);
+
+    if (nodalDensity.size() < size)
+    {
+        if (nodalDensity.empty())
+        {
+            nodalDensity.resize(size, defaultNodalDensity);
+        }
+        else
+        {
+            nodalDensity.resize(size, nodalDensity.back());
+        }
+    }
+}
+
+template <class DataTypes, class ElementType>
+sofa::Deriv_t<DataTypes> ElementMass<DataTypes, ElementType>::getGravity() const
+{
+    const auto& nodeGravity = this->getContext()->getGravity();
+
+    sofa::Deriv_t<DataTypes> gravity;
+    DataTypes::set ( gravity, nodeGravity[0], nodeGravity[1], nodeGravity[2]);
+
+    return gravity;
+}
 
 template <class DataTypes, class ElementType>
 bool ElementMass<DataTypes, ElementType>::isDiagonal() const
@@ -16,6 +73,29 @@ void ElementMass<DataTypes, ElementType>::addForce(const sofa::core::MechanicalP
                                                    const sofa::DataVecCoord_t<DataTypes>& x,
                                                    const sofa::DataVecDeriv_t<DataTypes>& v)
 {
+    const sofa::helper::ReadAccessor nodalDensity = sofa::helper::getReadAccessor( d_nodalDensity);
+
+    auto positionAccessor = sofa::helper::getReadAccessor(x);
+    auto forceAccessor = sofa::helper::getWriteAccessor(f);
+
+    //make sure there is a density associated to each node
+    resizeNodalDensity(positionAccessor.size());
+
+    const auto gravity = this->getGravity();
+
+    const auto& elements = FiniteElement::getElementSequence(*this->l_topology);
+
+    for (std::size_t elementId = 0; elementId < elements.size(); ++elementId)
+    {
+        const auto& element = elements[elementId];
+
+        const std::array<sofa::Coord_t<DataTypes>, trait::NumberOfNodesInElement> elementNodesCoordinates =
+            extractNodesVectorFromGlobalVector(element, positionAccessor.ref());
+
+        const std::array<sofa::Real_t<DataTypes>, trait::NumberOfNodesInElement> elementNodesDensity =
+            extractNodesVectorFromGlobalVector(element, nodalDensity.ref());
+    }
+
 }
 
 }  // namespace elasticity

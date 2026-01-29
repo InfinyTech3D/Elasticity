@@ -38,7 +38,7 @@
             <TetrahedronSetGeometryAlgorithms template="Vec3" name="GeomAlgo" drawTetrahedra="false"/>
             <Hexa2TetraTopologicalMapping input="@grid" output="@Tetra_topo" />
 
-            <MeshMatrixMass totalMass="1500" topology="@Tetra_topo"/>
+            <TetrahedronMass nodalDensity="0.01" topology="@Tetra_topo"/>
             <CorotationalFEMForceField name="FEM" youngModulus="2000" poissonRatio="0.45" topology="@Tetra_topo"/>
         </Node>
 
@@ -53,7 +53,7 @@
         <RegularGridTopology name="grid" min="5 -5 0" max="15 5 40" n="5 5 20"/>
         <MechanicalObject template="Vec3" name="state" showObject="true"/>
 
-        <MeshMatrixMass totalMass="1500" topology="@grid"/>
+        <HexahedronMass nodalDensity="0.01" topology="@grid"/>
         <CorotationalFEMForceField name="FEM" youngModulus="2000" poissonRatio="0.45" topology="@grid"/>
 
         <BoxROI template="Vec3" name="box_roi" box="4 -6 -1 16 6 0.1" drawBoxes="1" />
