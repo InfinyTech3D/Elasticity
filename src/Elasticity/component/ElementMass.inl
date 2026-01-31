@@ -27,6 +27,12 @@ void ElementMass<DataTypes, ElementType>::init()
         this->resizeNodalDensity(this->mstate->getSize());
     }
 
+    // (Re)build cache if possible
+    if (!this->isComponentStateInvalid())
+    {
+        updateMassCacheIfNeeded();
+    }
+
     if (!this->isComponentStateInvalid())
     {
         this->d_componentState.setValue(sofa::core::objectmodel::ComponentState::Valid);
@@ -69,6 +75,131 @@ bool ElementMass<DataTypes, ElementType>::isDiagonal() const
 }
 
 template <class DataTypes, class ElementType>
+void ElementMass<DataTypes, ElementType>::updateMassCacheIfNeeded()
+{
+    if (!this->l_topology || !this->mstate)
+        return;
+
+    const auto& elements = FiniteElement::getElementSequence(*this->l_topology);
+    if (m_elementQuadratureMass.size() == elements.size())
+        return;
+
+    m_elementQuadratureMass.clear();
+    m_elementQuadratureMass.resize(elements.size());
+
+    const auto restPosAcc = this->mstate->readRestPositions();
+
+    std::size_t elementId = 0;
+    for (const auto& element : elements)
+    {
+        const std::array<Coord, NumberOfNodesInElement> elementNodesRestCoordinates =
+            extractNodesVectorFromGlobalVector(element, restPosAcc.ref());
+
+        auto& elementData = m_elementQuadratureMass[elementId];
+
+        std::size_t qIndex = 0;
+        for (const auto& [quadraturePoint, weight] : FiniteElement::quadraturePoints())
+        {
+            const auto N = FiniteElement::shapeFunctions(quadraturePoint);
+            const auto dN_dq_ref = FiniteElement::gradientShapeFunctions(quadraturePoint);
+
+            sofa::type::Mat<spatial_dimensions, FiniteElement::TopologicalDimension, Real> jacobian;
+            for (sofa::Size i = 0; i < NumberOfNodesInElement; ++i)
+            {
+                jacobian += sofa::type::dyad(elementNodesRestCoordinates[i], dN_dq_ref[i]);
+            }
+
+            const auto detJ = elasticity::absGeneralizedDeterminant(jacobian);
+            const Real coeff = static_cast<Real>(weight) * static_cast<Real>(detJ);
+
+            ScalarMassMatrix& Bq = elementData[qIndex];
+            Bq.clear();
+
+            for (sofa::Size i = 0; i < NumberOfNodesInElement; ++i)
+            {
+                for (sofa::Size j = 0; j < NumberOfNodesInElement; ++j)
+                {
+                    Bq(i, j) = coeff * N[i] * N[j];
+                }
+            }
+
+            ++qIndex;
+        }
+
+        ++elementId;
+    }
+}
+
+template <class DataTypes, class ElementType>
+void ElementMass<DataTypes, ElementType>::addMDx(const sofa::core::MechanicalParams* mparams,
+                                                sofa::DataVecDeriv_t<DataTypes>& vres,
+                                                const sofa::DataVecDeriv_t<DataTypes>& vdx,
+                                                SReal factor)
+{
+    SOFA_UNUSED(mparams);
+
+    if (!this->l_topology)
+        return;
+
+    // Ensure cache is built (and sized correctly) before using it
+    updateMassCacheIfNeeded();
+
+    const sofa::helper::ReadAccessor nodalDensity = sofa::helper::getReadAccessor(d_nodalDensity);
+    auto res = sofa::helper::getWriteAccessor(vres);
+    auto dx = sofa::helper::getReadAccessor(vdx);
+    resizeNodalDensity(dx.size());
+
+    if (res.size() < dx.size())
+        res.resize(dx.size());
+
+    const auto& elements = FiniteElement::getElementSequence(*this->l_topology);
+    if (m_elementQuadratureMass.size() != elements.size())
+        return; // safety (should not happen if cache built)
+
+    const Real fact = static_cast<Real>(factor);
+
+    for (std::size_t elementId = 0; elementId < elements.size(); ++elementId)
+    {
+        const auto& element = elements[elementId];
+
+        const std::array<Real, NumberOfNodesInElement> elementNodesDensity =
+            extractNodesVectorFromGlobalVector(element, nodalDensity.ref());
+
+        const auto& elementData = m_elementQuadratureMass[elementId];
+
+        std::size_t qIndex = 0;
+        for (const auto& [quadraturePoint, weight] : FiniteElement::quadraturePoints())
+        {
+            SOFA_UNUSED(weight);
+
+            const auto N = FiniteElement::shapeFunctions(quadraturePoint);
+
+            // density at quadrature point (interpolated from nodal densities)
+            Real rho_q = static_cast<Real>(0);
+            for (sofa::Size k = 0; k < NumberOfNodesInElement; ++k)
+            {
+                rho_q += N[k] * elementNodesDensity[k];
+            }
+
+            const ScalarMassMatrix& Bq = elementData[qIndex];
+
+            // Apply (rho_q * Bq) to dx, component-wise in spatial dimensions
+            for (sofa::Size i = 0; i < NumberOfNodesInElement; ++i)
+            {
+                Deriv acc{};
+                for (sofa::Size j = 0; j < NumberOfNodesInElement; ++j)
+                {
+                    acc += dx[element[j]] * (rho_q * Bq(i, j));
+                }
+                res[element[i]] += acc * fact;
+            }
+
+            ++qIndex;
+        }
+    }
+}
+
+template <class DataTypes, class ElementType>
 void ElementMass<DataTypes, ElementType>::addForce(const sofa::core::MechanicalParams* mparams,
                                                    sofa::DataVecDeriv_t<DataTypes>& f,
                                                    const sofa::DataVecCoord_t<DataTypes>& x,
@@ -80,7 +211,7 @@ void ElementMass<DataTypes, ElementType>::addForce(const sofa::core::MechanicalP
     if (!l_topology)
         return;
 
-    const sofa::helper::ReadAccessor nodalDensity = sofa::helper::getReadAccessor( d_nodalDensity);
+    const sofa::helper::ReadAccessor nodalDensity = sofa::helper::getReadAccessor(d_nodalDensity);
 
     auto positionAccessor = sofa::helper::getReadAccessor(x);
     auto forceAccessor = sofa::helper::getWriteAccessor(f);

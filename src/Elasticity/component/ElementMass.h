@@ -47,6 +47,11 @@ public:
         const sofa::DataVecCoord_t<DataTypes>& x,
         const sofa::DataVecDeriv_t<DataTypes>& v) override;
 
+    void addMDx(const sofa::core::MechanicalParams* mparams,
+        sofa::DataVecDeriv_t<DataTypes>& vres,
+        const sofa::DataVecDeriv_t<DataTypes>& vdx,
+        SReal factor) override;
+
     sofa::Data<sofa::VecReal_t<DataTypes> > d_nodalDensity;
 
 protected:
@@ -54,13 +59,27 @@ protected:
     using trait = elasticity::trait<DataTypes, ElementType>;
     using FiniteElement = typename trait::FiniteElement;
 
+    using Coord = sofa::Coord_t<DataTypes>;
+    using Deriv = sofa::Deriv_t<DataTypes>;
+    using Real = sofa::Real_t<DataTypes>;
+
+    static constexpr sofa::Size spatial_dimensions = DataTypes::spatial_dimensions;
+    static constexpr sofa::Size NumberOfNodesInElement = trait::NumberOfNodesInElement;
+    static constexpr auto NumberOfQuadraturePoints = FiniteElement::quadraturePoints().size();
+
+    using ScalarMassMatrix = sofa::type::Mat<NumberOfNodesInElement, NumberOfNodesInElement, Real>;
+    using ElementQuadratureMass = std::array<ScalarMassMatrix, NumberOfQuadraturePoints>;
+
     ElementMass();
 
-    static constexpr sofa::Real_t<DataTypes> defaultNodalDensity { 1. };
+    static constexpr Real defaultNodalDensity { 1. };
     void resizeNodalDensity(const std::size_t size);
 
-    sofa::Deriv_t<DataTypes> getGravity() const;
+    Deriv getGravity() const;
 
+    void updateMassCacheIfNeeded();
+
+    sofa::type::vector<ElementQuadratureMass> m_elementQuadratureMass; // geometry-only cache (rest positions)
 };
 
 
