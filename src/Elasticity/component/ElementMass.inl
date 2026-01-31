@@ -1,6 +1,7 @@
 #pragma once
 #include <Elasticity/component/ElementMass.h>
 #include <Elasticity/impl/VectorTools.h>
+#include <Elasticity/impl/MatrixTools.h>
 
 namespace elasticity
 {
@@ -73,6 +74,12 @@ void ElementMass<DataTypes, ElementType>::addForce(const sofa::core::MechanicalP
                                                    const sofa::DataVecCoord_t<DataTypes>& x,
                                                    const sofa::DataVecDeriv_t<DataTypes>& v)
 {
+    SOFA_UNUSED(mparams);
+    SOFA_UNUSED(v);
+
+    if (!l_topology)
+        return;
+
     const sofa::helper::ReadAccessor nodalDensity = sofa::helper::getReadAccessor( d_nodalDensity);
 
     auto positionAccessor = sofa::helper::getReadAccessor(x);
@@ -94,8 +101,41 @@ void ElementMass<DataTypes, ElementType>::addForce(const sofa::core::MechanicalP
 
         const std::array<sofa::Real_t<DataTypes>, trait::NumberOfNodesInElement> elementNodesDensity =
             extractNodesVectorFromGlobalVector(element, nodalDensity.ref());
-    }
 
+        // Integrate: f_i += ∫_Ω rho(x) * N_i(x) * g dΩ
+        // with rho(x) interpolated from nodal densities: rho(x) = Σ_j N_j(x) * rho_j
+        for (const auto& [quadraturePoint, weight] : FiniteElement::quadraturePoints())
+        {
+            // shape functions evaluated at the quadrature point
+            const auto N = FiniteElement::shapeFunctions(quadraturePoint);
+
+            // gradient of shape functions in the reference element evaluated at the quadrature point
+            const auto dN_dq_ref = FiniteElement::gradientShapeFunctions(quadraturePoint);
+
+            // jacobian of the mapping from the reference space to the physical space
+            sofa::type::Mat<DataTypes::spatial_dimensions, FiniteElement::TopologicalDimension, sofa::Real_t<DataTypes>> jacobian;
+            for (sofa::Size i = 0; i < trait::NumberOfNodesInElement; ++i)
+            {
+                jacobian += sofa::type::dyad(elementNodesCoordinates[i], dN_dq_ref[i]);
+            }
+
+            const auto detJ = elasticity::absGeneralizedDeterminant(jacobian);
+            const auto dV = weight * detJ;
+
+            // density at quadrature point (interpolated)
+            sofa::Real_t<DataTypes> rho_q = static_cast<sofa::Real_t<DataTypes>>(0);
+            for (sofa::Size j = 0; j < trait::NumberOfNodesInElement; ++j)
+            {
+                rho_q += N[j] * elementNodesDensity[j];
+            }
+
+            // distribute body force to element nodes
+            for (sofa::Size i = 0; i < trait::NumberOfNodesInElement; ++i)
+            {
+                forceAccessor[element[i]] += (dV * (rho_q * N[i])) * gravity;
+            }
+        }
+    }
 }
 
 }  // namespace elasticity
