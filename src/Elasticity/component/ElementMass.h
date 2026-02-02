@@ -52,6 +52,8 @@ public:
         const sofa::DataVecDeriv_t<DataTypes>& vdx,
         SReal factor) override;
 
+    void addMToMatrix(sofa::linearalgebra::BaseMatrix * matrix, SReal mFact, unsigned int &offset) override;
+
     sofa::Data<sofa::VecReal_t<DataTypes> > d_nodalDensity;
 
 protected:
@@ -65,10 +67,9 @@ protected:
 
     static constexpr sofa::Size spatial_dimensions = DataTypes::spatial_dimensions;
     static constexpr sofa::Size NumberOfNodesInElement = trait::NumberOfNodesInElement;
-    static constexpr auto NumberOfQuadraturePoints = FiniteElement::quadraturePoints().size();
 
     using ScalarMassMatrix = sofa::type::Mat<NumberOfNodesInElement, NumberOfNodesInElement, Real>;
-    using ElementQuadratureMass = std::array<ScalarMassMatrix, NumberOfQuadraturePoints>;
+    using ElementQuadratureMass = std::array<ScalarMassMatrix, trait::NbQuadraturePoints>;
 
     ElementMass();
 
