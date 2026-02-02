@@ -169,7 +169,7 @@ TEST(TET4LinearSmallStrainFEMForceField, jacobian)
 
 }
 
-struct LegacyComparisonTest : public BaseSimulationTest, public NumericTest<SReal>
+struct LegacyComparisonTest : public sofa::testing::BaseSimulationTest, public sofa::testing::NumericTest<SReal>
 {
     SceneInstance m_scene{};
 
