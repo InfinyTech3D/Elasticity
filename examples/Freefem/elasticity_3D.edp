@@ -1,0 +1,105 @@
+load "msh3"
+load "medit"
+load "iovtk"
+ // remarque : la comparaison theorique qu'on a obtenue n'est pas vraiment valide 
+ // car on compare une geometrie tres difficle à une poutre, mais on reste tjrs dans le cadre du respect de la loi d la physique 
+mesh3 Th("C:/Program Files (x86)/FreeFem++/examples/3d/dodecaedre01.mesh");
+
+// Calculer zmin
+real zmin = 1e100, zmax = -1e100;
+for (int i = 0; i < Th.nv; i++) {
+    zmin = min(zmin, Th(i).z);
+    zmax = max(zmax, Th(i).z);
+}
+cout << "zmin=" << zmin << "  zmax=" << zmax << endl;
+
+// Changer le label des faces du bas (proches de zmin)
+Th = change(Th, flabel=(abs(z - zmin) < 0.1) ? 1 : 0);
+
+// Vérifier les labels modifiés
+cout << "Nouveaux labels  :" << endl;
+for (int i = 0; i < Th.nbe; i++) {
+    if (Th.be(i).label == 1)
+        cout << "Face " << i << " label = " << Th.be(i).label << endl;
+}
+
+// Vérifier tous les labels présents
+int[int] labs = labels(Th);
+cout << "Labels presents dans le maillage :" << endl;
+for(int i = 0; i < labs.n; i++)
+    cout << "  label " << labs[i] << endl;
+
+// Paramètres physiques
+real E       = 210e9;
+real sigma   = 0.3;
+real rho     = 7800.;
+real gravity = -9.81 * rho;
+real mu      = E / (2.*(1.+sigma));
+real lambda  = E*sigma / ((1.+sigma)*(1.-2.*sigma));
+
+// Espace éléments finis
+fespace Vh(Th, [P1,P1,P1]);
+Vh [ux,uy,uz],[vx,vy,vz];
+
+// Macros (attention aux parenthèses superflues)
+macro Epsilon(u1,u2,u3) [dx(u1), dy(u2), dz(u3), 
+                         (dy(u3)+dz(u2))/sqrt(2.), 
+                         (dz(u1)+dx(u3))/sqrt(2.), 
+                         (dx(u2)+dy(u1))/sqrt(2.)] // EOM
+macro Div(u1,u2,u3) (dx(u1) + dy(u2) + dz(u3)) // EOM
+
+// Problème d'élasticité  on fixe les faces label=1
+problem Elasticite3D([ux,uy,uz],[vx,vy,vz], solver=sparsesolver) =
+    int3d(Th)(
+        lambda * Div(vx,vy,vz) * Div(ux,uy,uz)
+      + 2.*mu * (Epsilon(vx,vy,vz)' * Epsilon(ux,uy,uz))
+    )
+    - int3d(Th)(gravity * vz)
+    + on(1, ux=0, uy=0, uz=0);  
+
+// Résolution
+Elasticite3D;
+
+// Résultats
+cout << "Deplacement max |ux| = " << ux[].linfty << " m" << endl;
+cout << "Deplacement max |uy| = " << uy[].linfty << " m" << endl;
+cout << "Deplacement max |uz| = " << uz[].linfty << " m" << endl;
+
+// Création d'un espace scalaire P1
+fespace Wh(Th, P1);
+Wh normu;
+
+
+normu = sqrt(ux*ux + uy*uy + uz*uz);
+
+cout << "Deplacement max total = " << normu[].linfty << " m" << endl;
+
+
+
+cout << "Theorique (poutre)    = " << rho*9.81*(zmax-zmin)^2/(2.*E) << " m" << endl;
+
+// Visualisation
+medit("Norme du deplacement", Th, normu, wait=1);
+medit("Deplacement vertical uz", Th, uz, wait=1);
+
+// Maillage déformé 
+real umax = max(ux[].linfty, max(uy[].linfty, uz[].linfty));
+real coef = 0.1*(zmax-zmin)/umax;
+mesh3 Thd = movemesh3(Th, transfo=[x+coef*ux, y+coef*uy, z+coef*uz]);
+medit("Dodecaedre deforme", Thd, wait=1);
+
+
+
+
+
+
+// Exporter la solution en format VTK
+//int[int] order = [1, 1, 1]; 
+//savevtk("cube_deplacement.vtu", Th, [ux, uy, uz], dataname="Deplacement", order=order);
+//savevtk("cube_norme.vtu", Th, normu, dataname="Norme", order=order);
+//savevtk("cube_uz.vtu", Th, uz, dataname="Uz", order=order);
+
+// Exporter le maillage déformé
+//mesh3 Thd = movemesh3(Th, transfo=[x + 1e6*ux, y + 1e6*uy, z + 1e6*uz]);
+//savevtk("cube_deforme.vtu", Thd, [ux, uy, uz], dataname="Deplacement", order=order);
+
