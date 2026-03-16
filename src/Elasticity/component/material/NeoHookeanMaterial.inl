@@ -12,7 +12,7 @@ auto NeoHookeanMaterial<DataTypes>::secondPiolaKirchhoffStress(Strain<DataTypes>
     static constexpr auto& I = Strain<DataTypes>::identity;
     const auto& C = strain.getRightCauchyGreenTensor();
 
-    const DeformationGradient C_1 = inverse(C);
+    const DeformationGradient C_1 = elasticity::inverse(C);
     const Real J = strain.getDeterminantDeformationGradient();
 
     return m_mu * (I - C_1) + m_lambda * std::log(J) * C_1;

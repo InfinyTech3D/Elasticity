@@ -93,7 +93,7 @@ sofa::type::Mat<C, L, real> inverse(const sofa::type::Mat<L, C, real>& mat)
     }
     else
     {
-        return leftPseudoInverse(mat);
+        return elasticity::leftPseudoInverse(mat);
     }
 }
 

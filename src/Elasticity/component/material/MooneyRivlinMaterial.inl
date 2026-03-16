@@ -19,7 +19,7 @@ template <class DataTypes>
 auto MooneyRivlinMaterial<DataTypes>::secondPiolaKirchhoffStress(Strain<DataTypes>& strain) -> StressTensor
 {
     const auto& C = strain.getRightCauchyGreenTensor();
-    const auto C_1 = inverse(C);
+    const auto C_1 = elasticity::inverse(C);
 
     const auto J = strain.getDeterminantDeformationGradient();
     assert(J > 0);
