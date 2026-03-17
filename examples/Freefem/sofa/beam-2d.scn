@@ -1,0 +1,129 @@
+<?xml version="1.0"?>
+<!--
+    2D cantilever beam under gravity — SOFA equivalent of beam-2d.edp (FreeFEM)
+    Two formulations shown side by side:
+
+    In SOFA with the Vec1, Vec2, Vec3 templates. Depending on how these are set up, 
+    in order to generate a similar outcome as FreeFEM, we need to make some adjustments.
+    Just like in many FE codes, we can solve 2D problems in 3D space. This is what using a Vec3
+    template does. The 'd' in Vec3d is the 'double' type of C++.
+
+    Depending on the template we choose, SOFA will do things differently:
+
+    In the Node with name:
+    1. beam_plane_stress (Vec2)  y in [0, 2]
+        Lame lambda = E*nu / ((1+nu)*(1-nu))
+        DOFs: 2 per node (u_x, u_y). Displacement in the x and y directions.
+
+    2. beam_plane_strain (Vec3)  y in [3, 5]
+        Lame lambda = E*nu / ((1+nu)*(1-2*nu)) !!! Notice the 1-2*nu contrary to the above
+        DOFs: 3 per node (u_x, u_y, u_z)
+
+    The FreeFEM file (beam-2d.edp) uses 3D Lame coefficients, so formulation 2 is the exact replicate.
+    Formulation 1 shows the Vec2d approach. There will be a difference in the results between the
+    two.
+
+    Young's modulus: E=21.5 
+    Poisson's ratio: nu=0.29
+-->
+
+<!-- Gravity is applied at the root node -->
+<Node name="root" gravity="0 -0.05 0" dt="1">
+
+    <Node name="plugins">
+        <RequiredPlugin name="Elasticity"/>
+        <RequiredPlugin name="Sofa.Component.Constraint.Projective"/>
+        <RequiredPlugin name="Sofa.Component.Engine.Select"/>
+        <RequiredPlugin name="Sofa.Component.LinearSolver.Direct"/>
+        <RequiredPlugin name="Sofa.Component.Mass"/>
+        <RequiredPlugin name="Sofa.Component.ODESolver.Backward"/>
+        <RequiredPlugin name="Sofa.Component.StateContainer"/>
+        <RequiredPlugin name="Sofa.Component.Topology.Container.Dynamic"/>
+        <RequiredPlugin name="Sofa.Component.Topology.Container.Grid"/>
+        <RequiredPlugin name="Sofa.Component.Visual"/>
+        <RequiredPlugin name="Sofa.GL.Component.Rendering3D"/>
+    </Node>
+
+    <DefaultAnimationLoop/>
+    <VisualStyle displayFlags="showBehaviorModels showForceFields showWireframe"/>
+
+    <!-- All template='' cases here are Vec2d-->
+    <Node name="beam_plane_stress">
+
+        <NewtonRaphsonSolver name="newtonSolver"
+            printLog="true"
+            warnWhenLineSearchFails="true"
+            maxNbIterationsNewton="1"
+            maxNbIterationsLineSearch="1"
+            lineSearchCoefficient="1"
+            relativeSuccessiveStoppingThreshold="0"
+            absoluteResidualStoppingThreshold="1e-7"
+            absoluteEstimateDifferenceThreshold="1e-12"
+            relativeInitialStoppingThreshold="1e-12"
+            relativeEstimateDifferenceThreshold="0"
+        />
+        <SparseLDLSolver name="linearSolver" template="CompressedRowSparseMatrixd"/>
+        <StaticSolver name="staticSolver" newtonSolver="@newtonSolver" linearSolver="@linearSolver"/>
+
+        <RegularGridTopology name="grid" min="0 0 0" max="10 2 0" n="41 11 1"/>
+        <MechanicalObject template="Vec2d" name="dofs"/>
+
+        <Node name="triangles">
+            <TriangleSetTopologyContainer name="topology" src="@../grid"/>
+
+            <MeshMatrixMass template="Vec2d,Vec2d" totalMass="20" topology="@topology"/>
+            <LinearSmallStrainFEMForceField name="FEM" template="Vec2d"
+                youngModulus="21.5" poissonRatio="0.29"
+                topology="@topology"
+            />
+        </Node>
+
+        <BoxROI name="fixed_roi" template="Vec2d"
+            box="-0.01 -0.01 -0.01  0.01 2.01 0.01" drawBoxes="true"/>
+        <FixedProjectiveConstraint template="Vec2d" indices="@fixed_roi.indices"/>
+
+    </Node>
+
+    <!-- All template='' cases here are Vec3d-->
+    <Node name="beam_plane_strain">
+
+        <NewtonRaphsonSolver name="newtonSolver"
+            printLog="true"
+            warnWhenLineSearchFails="true"
+            maxNbIterationsNewton="1"
+            maxNbIterationsLineSearch="1"
+            lineSearchCoefficient="1"
+            relativeSuccessiveStoppingThreshold="0"
+            absoluteResidualStoppingThreshold="1e-7"
+            absoluteEstimateDifferenceThreshold="1e-12"
+            relativeInitialStoppingThreshold="1e-12"
+            relativeEstimateDifferenceThreshold="0"
+        />
+        <SparseLDLSolver name="linearSolver" template="CompressedRowSparseMatrixd"/>
+        <StaticSolver name="staticSolver" newtonSolver="@newtonSolver" linearSolver="@linearSolver"/>
+
+        <RegularGridTopology name="grid" min="0 3 0" max="10 5 0" n="41 11 1"/>
+        <MechanicalObject template="Vec3d" name="dofs"/>
+
+        <Node name="triangles">
+            <TriangleSetTopologyContainer name="topology" src="@../grid"/>
+            <TriangleSetTopologyModifier/>
+            <TriangleSetGeometryAlgorithms template="Vec3d" drawTriangles="true"/>
+
+            <MeshMatrixMass totalMass="20" topology="@topology"/>
+            <LinearSmallStrainFEMForceField name="FEM"
+                youngModulus="21.5" poissonRatio="0.29"
+                topology="@topology"
+                mstate="@../dofs"/>
+        </Node>
+
+        <!-- Clamp left edge: x=0, y in [3,5].
+             FixedProjectiveConstraint fixes all 3 DOFs (u_x, u_y, u_z)
+             of the left-edge nodes, which is all that is needed. -->
+        <BoxROI name="fixed_roi" template="Vec3d"
+            box="-0.01 2.99 -1.0  0.01 5.01 1.0" drawBoxes="true"/>
+        <FixedProjectiveConstraint template="Vec3d" indices="@fixed_roi.indices"/>
+
+    </Node>
+
+</Node>
