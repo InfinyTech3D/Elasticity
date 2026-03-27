@@ -7,7 +7,7 @@ real pi = 3.14159265358979;
 
 int[int] nvals = [2, 4, 8, 16, 32, 64];
 
-ofstream file("convergence_grossier.txt");
+ofstream file("results/convergence_grossier.txt");
 file << "# n\th\terrL2\terrH1" << endl;
 
 for (int idx = 0; idx < nvals.n; idx++) {

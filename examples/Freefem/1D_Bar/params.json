@@ -1,0 +1,7 @@
+{
+    "length": 1.0,
+    "nx": 10,
+    "force": 1000.0,
+    "youngModulus": 1000.0,
+    "poissonRatio": 0.3
+}
