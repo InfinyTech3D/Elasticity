@@ -1,0 +1,104 @@
+// Beam under its own weight 
+
+// Parameters
+real E = 21.5;
+real sigma = 0.29;
+real gravity = -0.05;
+int n=140;
+int m=35;
+
+
+// Maillage non structure " avec courbes parametriques "
+border a(t=2, 0){x=0; y=t ;label=1;}      // gauche cote de la poutre à encastre 
+border b(t=0, 10){x=t; y=0 ;label=2;}     // bas (libre)
+border c(t=0, 2){x=10; y=t ;label=3;}     // droite (libre)
+border d(t=0, 10){x=10-t; y=2; label=4;}  // haut (libre)
+mesh th = buildmesh(b(n) + c(m) + d(n) + a(m)); // un maillage equilibre previlige celui là 
+// n=100 unite de long pour les cotes haut et bas, et n=25 unite de haut pour les cote gauche et droite 
+//mesh th = buildmesh(b(n) + c(n) + d(n) + a(n)); // evite celui là le maillage est raffine uniquement aux extrimite a et c aka gauche et droite 
+// Fespace element finis espace P1 ;
+plot (th,cmm="maillage-poutre", wait=1);
+fespace Vh(th, [P1, P1]);
+Vh [uu, vv], [w, s];
+
+// Macro
+real sqrt2 = sqrt(2.);
+macro epsilon(u1, u2) [dx(u1), dy(u2), (dy(u1) + dx(u2))/sqrt2] // EOM
+macro div(u, v) (dx(u) + dy(v)) // EOM
+
+// Coefficients de Lamé
+real mu = E/(2*(1 + sigma));
+real lambda = E*sigma/((1 + sigma)*(1 - 2*sigma));
+
+// Problème
+solve Elasticity ([uu, vv], [w, s], solver=sparsesolver)
+    = int2d(th)(
+          lambda*div(w, s)*div(uu, vv)
+        + 2.*mu*(epsilon(w, s)' * epsilon(uu, vv))
+    )
+    - int2d(th)(gravity*s)
+    + on(1, uu=0, vv=0);  
+
+// Résultats
+cout << "Max displacement = " << uu[].linfty << ", " << vv[].linfty << endl;
+
+// Visualisation
+plot([uu, vv], wait=1, cmm="Deplacement");
+
+
+mesh th1 = movemesh(th, [x + uu, y + vv]);
+plot( th1, wait=1, cmm="Maillage initial  et deformation");
+
+// Espace pour les contraintes
+fespace Wh(th, P1);
+Wh sigmaxx, sigmayy, sigmaxy, sigmavm;
+
+// Calcul des contraintes
+sigmaxx = lambda * (dx(uu) + dy(vv)) + 2*mu*dx(uu);
+sigmayy = lambda * (dx(uu) + dy(vv)) + 2*mu*dy(vv);
+sigmaxy = mu*(dy(uu) + dx(vv));
+
+// Contrainte de von Mises pour plasticité
+sigmavm = sqrt(sigmaxx^2 + sigmayy^2 - sigmaxx*sigmayy + 3*sigmaxy^2);
+
+// Visualisation
+plot(sigmaxx, wait=1, fill=1, value=1, cmm="Contrainte sigma_xx (MPa)");
+plot(sigmavm, wait=1, fill=1, value=1, cmm="Contrainte von Mises (MPa)");
+
+// Valeurs extrêmes
+cout << "sigma_xx min = " << sigmaxx[].min << ", max = " << sigmaxx[].max << endl;
+cout << "sigma_vm max = " << sigmavm[].max << endl;
+
+
+
+//  Calcul des réactions par intégration sur le bord encastré (label=1)
+real reactionx = int1d(th, 1)( (sigmaxx * N.x + sigmaxy * N.y) );
+real reactiony = int1d(th, 1)( (sigmaxy * N.x + sigmayy * N.y) );
+
+//  Poids total 
+real poidstotal = abs(gravity) * int2d(th)(1);
+
+//  Affichage des résultats
+
+cout << "Reaction horizontale a l'encastrement : " << reactionx << endl;
+cout << "Reaction verticale a l'encastrement   : " << reactiony << endl;
+cout << "Poids total de la poutre               : " << poidstotal << endl;
+cout << "Rapport reaction verticale / poids      : " << reactiony / poidstotal << endl;
+
+// Test d'équilibre
+real erreurequilibre = abs(reactiony/poidstotal - 1) * 100;
+cout << "Erreur d'equilibre : " << erreurequilibre << " %" << endl;
+
+if (erreurequilibre < 5)
+    cout << "equilibre verifie " << endl;
+else
+    cout << " Attention : desequilibre detecte !" << endl;
+
+//  Vérification du moment à l'encastrement
+real moment = int1d(th, 1)( (y - 1) * (sigmaxy * N.x + sigmayy * N.y) - (x) * (sigmaxx * N.x + sigmaxy * N.y) );
+cout << "Moment a l'encastrement : " << moment << endl;
+
+
+
+
+

@@ -1,0 +1,104 @@
+<?xml version="1.0"?>
+<!--
+    Bar under axial traction — SOFA equivalent to FreeFEM file
+
+    The bar is expanded from x=0 to L=1
+    The traction force F=1000N
+    Young's Modulus E = 1e6
+    Poisson's Ratio rho = 0
+
+    Exact solution: u(x) = (F / EA) * x  
+    This means that u(L) = 1.0
+
+    Important To Note:
+        The Elasticity plugin's Edge element integrates stiffness over element length 
+        only. It does not take into account any assumed cross section
+        The axial stiffness per unit length is (lambda + 2*mu). 
+        In the FreeFEM script, the cross-section A = 0.001.
+        Setting E_eff = E * A = 1e6 * 0.001 = 1000 recovers the same EA stiffness
+        as FreeFEM. Traction force is unchanged.
+
+    Expected Result:
+        u(L) = F * L / E_eff = 1000 * 1 / 1000 = 1.0
+        Displacement profile: linear  u_x(x) = x
+-->
+<Node name="root" gravity="0 0 0" dt="1">
+
+    <Node name="plugins">
+        <RequiredPlugin name="Elasticity"/>
+        <RequiredPlugin name="Sofa.Component.Constraint.Projective"/>  <!-- FixedProjectiveConstraint -->
+        <RequiredPlugin name="Sofa.Component.Engine.Select"/>           <!-- BoxROI -->
+        <RequiredPlugin name="Sofa.Component.LinearSolver.Direct"/>     <!-- SparseLDLSolver -->
+        <RequiredPlugin name="Sofa.Component.MechanicalLoad"/>          <!-- ConstantForceField -->
+        <RequiredPlugin name="Sofa.Component.ODESolver.Backward"/>      <!-- StaticSolver -->
+        <RequiredPlugin name="Sofa.Component.StateContainer"/>          <!-- MechanicalObject -->
+        <RequiredPlugin name="Sofa.Component.Topology.Container.Dynamic"/> <!-- EdgeSet* -->
+        <RequiredPlugin name="Sofa.Component.Topology.Container.Grid"/> <!-- RegularGridTopology -->
+        <RequiredPlugin name="Sofa.Component.Visual"/>                  <!-- VisualStyle, LineAxis -->
+        <RequiredPlugin name="Sofa.GL.Component.Rendering3D"/>          <!-- OglSceneFrame -->
+    </Node>
+
+    <DefaultAnimationLoop/>
+    <VisualStyle displayFlags="showBehaviorModels showForceFields showWireframe"/>
+
+    <Node name="bar">
+
+        <!-- This is where you define the  components that represent your -->
+        <!-- integration schemes for equillibrium problems-->
+        <!-- Even though we are solving a linear problem, the NewtonRaphsonSolver is employed-->
+        <!-- It will just do 1 iteration -->
+        <NewtonRaphsonSolver name="newtonSolver"
+            printLog="true"
+            warnWhenLineSearchFails="true"
+            maxNbIterationsNewton="1"
+            maxNbIterationsLineSearch="1"
+            lineSearchCoefficient="1"
+            relativeSuccessiveStoppingThreshold="0"
+            absoluteResidualStoppingThreshold="1e-7"
+            absoluteEstimateDifferenceThreshold="1e-12"
+            relativeInitialStoppingThreshold="1e-12"
+            relativeEstimateDifferenceThreshold="0"
+        />
+
+        <!-- Linear solver defined first-->
+        <!-- Equivalent to FreeFEM's direct linear solver-->
+        <SparseLDLSolver name="linearSolver" template="CompressedRowSparseMatrixd"/>
+
+        <!-- StaticSolver to find equilibrium-->
+        <StaticSolver name="staticSolver" newtonSolver="@newtonSolver" linearSolver="@linearSolver"/>
+
+        <!-- 8 equal elements: 9 nodes from x=0 to x=1              -->
+        <!-- Notice the 9 1 1, meaning 9 nodes in the x-axis,       -->
+        <!-- only 1 in each other direction of the grid i.e. a line -->
+        <RegularGridTopology name="grid" min="0 0 0" max="1 0 0" n="9 1 1"/>
+        <!-- The MechanicalObject is reponsible for storing information about mechanics-->
+        <MechanicalObject template="Vec3d" name="dofs" showObject="true" showObjectScale="0.02"/>
+
+        <Node name="edges">
+            <!-- The Topology must be defined explicitly; Important -->
+            <EdgeSetTopologyContainer name="topology"
+                position="@../dofs.position"
+                edges="@../grid.edges"/>
+
+            <!--
+                youngModulus = E * A = 1e6 * 0.001 = 1000  (effective axial stiffness)
+                poissonRatio = 0  =>  lambda=0, lambda+2*mu = E_eff  (no 3D coupling factor)
+            -->
+            <LinearSmallStrainFEMForceField name="FEM"
+                youngModulus="1000" poissonRatio="0.0"
+                topology="@topology"/>
+        </Node>
+
+        <!-- The BoxROI components help us select DOF indices in order to apply BCs-->
+        <BoxROI name="fixed_roi" box="-0.01 -1 -1  0.01 1 1" drawBoxes="false"/>
+        <!-- Dirichlet BC: u(x=0) = 0, that's the "Fixed" in ProjectiveConstraint-->
+        <FixedProjectiveConstraint indices="@fixed_roi.indices"/>
+
+        <!-- Neumann BC: point traction F=1000 at x=L=1 -->
+        <BoxROI name="load_roi" box="0.99 -1 -1  1.01 1 1" drawBoxes="false"/>
+        <!-- The "ForceField" in the name means that we apply a force on certain DOFs-->
+        <ConstantForceField indices="@load_roi.indices" forces="1000 0 0" showArrowSize="1e-4"/>
+
+    </Node>
+
+</Node>
