@@ -1,13 +1,5 @@
 """
-beam_2d_sofa.py
-===============
-Equivalent Python de beam-2d.scn (SOFA)
-Poutre 2D sous gravité — formulation déformations planes (Vec3d)
-Equivalent exact de beam-2d.edp (FreeFEM)
-
-
-Export :
-    Génère sofa_results.txt avec x, y, ux, uy pour chaque nœud
+2D Beam Simulation - Plane Deformation Under Gravity
 """
 
 import Sofa
@@ -24,14 +16,13 @@ NU      = 0.29
 GRAVITY = -0.05
 NX, NY  = 141, 36
 TOTAL_MASS = 20.0
-OUTPUT_FILE = "sofa_results.txt"
+OUTPUT_FILE = "sofa_displacement.txt"
 
 
 
-class ExportController(Sofa.Core.Controller):
+class DisplacementExporter(Sofa.Core.Controller):
     """
-    Contrôleur SOFA : exporte les positions déformées après convergence.
-    Répond à onAnimateEndEvent (fin de chaque pas de temps).
+    Recovers nodal displacements after convergence and writes them in a .txt file
     """
 
     def __init__(self, *args, **kwargs):
@@ -46,20 +37,18 @@ class ExportController(Sofa.Core.Controller):
         if self.exported:
             return
         
-        # Laisser le temps à la simulation de converger
-        # 50 itérations suffisent généralement
         if self.iteration < 50:
             return
 
         root = self.getContext().getRootContext()
         strain = root.getChild("beam_plane_strain")
         if strain is None:
-            print("[ExportController] Nœud beam_plane_strain introuvable")
+            print("[DisplacementExporter] Nœud beam_plane_strain introuvable")
             return
 
         dofs = strain.getObject("dofs")
         if dofs is None:
-            print("[ExportController] MechanicalObject 'dofs' introuvable")
+            print("[DisplacementExporter] MechanicalObject 'dofs' introuvable")
             return
 
         # positions déformées
@@ -88,12 +77,12 @@ class ExportController(Sofa.Core.Controller):
                     uy = disp[i, 1]
                     f.write(f"{x:.6f} {y:.6f} {ux:.8f} {uy:.8f}\n")
             
-            print(f"[ExportController] ✓ Exporté {len(pos_def)} nœuds → {OUTPUT_FILE}")
+            print(f"[DisplacementExporter] ✓ Exporté {len(pos_def)} nœuds → {OUTPUT_FILE}")
             self.exported = True
             root.animate.value = False
             
         except Exception as e:
-            print(f"[ExportController] Erreur d'écriture: {e}")
+            print(f"[DisplacementExporter] Erreur d'écriture: {e}")
 
 
 def _build_initial_grid(nx, ny, y_offset=0.0):
@@ -132,7 +121,7 @@ def createScene(rootNode):
         displayFlags="showBehaviorModels showForceFields showWireframe")
 
     # ── Contrôleur d'export 
-    rootNode.addObject(ExportController(name="exporter", node=rootNode))
+    rootNode.addObject(DisplacementExporter(name="exporter", node=rootNode))
 
     # ── Nœud beam_plane_strain (Vec3d) 
     strain = rootNode.addChild("beam_plane_strain")

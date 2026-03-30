@@ -1,3 +1,6 @@
+"""
+1D Bar Simulation - Traction Load
+"""
 import Sofa
 import Sofa.Core
 import Sofa.Simulation
@@ -5,10 +8,10 @@ import SofaRuntime
 import numpy as np
 
 # Exporter les resultats 
-class ExportController(Sofa.Core.Controller):
+class DisplacementExporter(Sofa.Core.Controller):
     """Récupère les déplacements après convergence et les écrit dans un .txt"""
 
-    def __init__(self, dofs_node, output_file="sofa_deplacement.txt", *args, **kwargs):
+    def __init__(self, dofs_node, output_file="sofa_displacement.txt", *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dofs_node   = dofs_node
         self.output_file = output_file
@@ -35,7 +38,7 @@ class ExportController(Sofa.Core.Controller):
             for xi, ui in zip(x0_sorted, ux_sorted):
                 f.write(f"{xi:.6f}  {ui:.6f}\n")
 
-        print(f"[ExportController] Déplacements exportés → {self.output_file}")
+        print(f"[DisplacementExporter] Déplacements exportés → {self.output_file}")
         print(f"  u_x(L) = {ux_sorted[-1]:.6f}  (attendu : 1.0)")
         self.exported = True
 
@@ -43,7 +46,7 @@ class ExportController(Sofa.Core.Controller):
         """Stocke les positions initiales au démarrage"""
         pos = self.dofs_node.position.array()
         self.x_initial = pos[:, 0].copy()
-        print(f"[ExportController] {len(self.x_initial)} noeuds initialisés.")
+        print(f"[DisplacementExporter] {len(self.x_initial)} noeuds initialisés.")
 
 
 # creation de la scene 
@@ -138,9 +141,9 @@ def createScene(rootNode):
 
     
     rootNode.addObject(
-        ExportController(
+        DisplacementExporter(
             dofs_node   = dofs,
-            output_file = "sofa_deplacement.txt",
+            output_file = "sofa_displacement.txt",
             name        = "exportCtrl"
         )
     )
