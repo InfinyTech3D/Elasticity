@@ -1,0 +1,29 @@
+real L = 1.0;
+real E = 210000.0;
+real A = 0.001;
+real F = 1000.0;
+int N = 10;
+
+meshL Th = segment(N, [x*L]);
+
+fespace Vh(Th, P1);
+Vh u, v;
+
+problem Traction(u, v) =
+    int1d(Th)( E * A * dx(u) * dx(v) )
+    - int1d(Th, 2)( F * v )
+    + on(1, u=0);
+
+Traction;
+
+Vh uexact = (F / (E * A)) * x;
+real errL2 = sqrt(int1d(Th)((u - uexact)^2));
+
+// Chemin absolu pour les fichiers
+ofstream file("C:/Users/fatim/Desktop/SOFA_tuto/u.txt");
+for (int i = 0; i < Th.nv; i++) {
+    file << u[][i] << endl;
+}
+
+ofstream fileerr("C:/Users/fatim/Desktop/SOFA_tuto/err.txt");
+fileerr << errL2 << endl;
