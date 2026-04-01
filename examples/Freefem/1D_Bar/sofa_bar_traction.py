@@ -30,9 +30,10 @@ class DisplacementExporter(Sofa.Core.Controller):
         self.u_x = x_final - self.x_initial
 
         with open(self.output_file, 'w') as f:
-            f.write("x_initial  x_final  u_x\n")
+            f.write(f"{'x_initial':>12}  {'x_final':>12}  {'u_x':>12}\n")
+            f.write("-" * 42 + "\n")
             for xi, xf, ui in zip(self.x_initial, x_final, self.u_x):
-                f.write(f"{xi:.6f}  {xf:.6f}  {ui:.6f}\n")
+                f.write(f"{xi:12.6f}  {xf:12.6f}  {ui:12.6f}\n")
 
 
 def create_scene_args(rootNode, length, force, young_modulus, poisson_ratio, nx):
