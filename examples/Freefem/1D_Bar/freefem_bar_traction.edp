@@ -1,0 +1,34 @@
+//1D Bar Simulation - Traction Load
+IMPORT "io.edp"
+
+DEFAULT (length, 1.0)
+DEFAULT (youngModulus, 1000.0)
+DEFAULT (force, 1000.0)
+DEFAULT (nx, 10)
+
+real E = $youngModulus;
+real F = $force;
+
+// Generate mesh internally: $nx segments over [0, $length]
+// Left endpoint ref=1 (Dirichlet), right endpoint ref=2
+meshL Th = segment($nx - 1, [x*$length, 0, 0]);
+
+fespace Vh(Th, P1);
+Vh u, v;
+
+// Variational formulation 
+// Dirichlet BC at left endpoint (ref=1)
+// Point integration at x=L (ref=2)
+problem Traction(u,v) = 
+    int1d(Th)(E * dx(u) * dx(v)) 
+    - int0d(Th, 2)(F * v)
+    + on(1, u=0);
+
+Traction;
+
+exportArray(u[]);
+
+// Also export x coordinates of each node (to verify order is the same)
+real[int] xcoords(Th.nv);
+for (int i = 0; i < Th.nv; i++) xcoords[i] = Th(i).x;
+exportArray(xcoords);
