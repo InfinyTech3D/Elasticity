@@ -37,7 +37,16 @@ class DisplacementExporter(Sofa.Core.Controller):
                 f.write(f"{x:12.6f}  {y:12.6f}  {ux:12.6f}  {uy:12.6f}\n")
 
 
-def create_scene_args(rootNode, mesh_file, height, young_modulus, poisson_ratio, rho, gravity):
+def create_scene_args(rootNode
+                    , mesh_file
+                    , height
+                    , young_modulus
+                    , poisson_ratio
+                    , rho
+                    , gravity
+                    , formulation):
+    dim_template = "Vec3d" if formulation == "planeStrain" else "Vec2d"
+
     requiredPlugins = [
         "Elasticity",
         "Sofa.Component.Constraint.Projective",
@@ -85,7 +94,7 @@ def create_scene_args(rootNode, mesh_file, height, young_modulus, poisson_ratio,
                      , filename=mesh_file)
         dofs = Beam.addObject('MechanicalObject'
                             , name="dofs"
-                            , template="Vec3d"
+                            , template=dim_template
                             , src="@loader")
 
         with Beam.addChild('triangles') as Triangles:
@@ -94,15 +103,16 @@ def create_scene_args(rootNode, mesh_file, height, young_modulus, poisson_ratio,
                               , src="@../loader")
             Triangles.addObject('TriangleSetTopologyModifier')
             Triangles.addObject('TriangleSetGeometryAlgorithms'
-                              , template="Vec3d"
+                              , template=dim_template
                               , drawTriangles=True)
             Triangles.addObject('MeshMatrixMass'
                               , name="mass"
+                              , template=f"{dim_template},{dim_template}"
                               , massDensity=rho
                               , topology="@topology")
             Triangles.addObject('LinearSmallStrainFEMForceField'
                               , name="FEM"
-                              , template="Vec3d"
+                              , template=dim_template
                               , youngModulus=young_modulus
                               , poissonRatio=poisson_ratio
                               , topology="@topology")
@@ -111,18 +121,18 @@ def create_scene_args(rootNode, mesh_file, height, young_modulus, poisson_ratio,
         eps = 1e-5
         Beam.addObject('BoxROI'
                      , name="fixed_roi"
-                     , template="Vec3d"
+                     , template=dim_template
                      , box=[-eps, -eps, -1.0, eps, height + eps, 1.0]
                      , drawBoxes=True)
         Beam.addObject('FixedProjectiveConstraint'
-                     , template="Vec3d"
+                     , template=dim_template
                      , indices="@fixed_roi.indices")
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
     exporter = rootNode.addObject(
         DisplacementExporter(
             dofs_node   = dofs,
-            output_file = os.path.join(RESULTS_DIR, "sofa_results.txt"),
+            output_file = os.path.join(RESULTS_DIR, f"sofa_{formulation}_results.txt"),
             name        = "exportCtrl"
         )
     )
@@ -140,19 +150,21 @@ def createScene(rootNode):
                     , rho          = float(cfg["rho"])
                     , gravity      = float(cfg["gravity"])
                     , mesh_file    = os.path.join(RESULTS_DIR, cfg.get("meshfile", "beam2d.msh"))
+                    , formulation  = "planeStrain"
     )
     return rootNode
 
 
-def sofaRun(height, young_modulus, poisson_ratio, rho, gravity, mesh_file=None):
+def sofaRun(height, young_modulus, poisson_ratio, rho, gravity, mesh_file, formulation):
     root = Sofa.Core.Node("root")
     _, exporter = create_scene_args(root
                                   , mesh_file    = mesh_file
-                                  , height        = height
+                                  , height       = height
                                   , young_modulus= young_modulus
                                   , poisson_ratio= poisson_ratio
                                   , rho          = rho
-                                  , gravity      = gravity)
+                                  , gravity      = gravity
+                                  , formulation  = formulation)
     Sofa.Simulation.init(root)
     Sofa.Simulation.animate(root, root.dt.value)
     return exporter.pos_initial, exporter.u
@@ -169,4 +181,5 @@ if __name__ == "__main__":
           , rho          = float(cfg["rho"])
           , gravity      = float(cfg["gravity"])
           , mesh_file    = os.path.join(RESULTS_DIR, cfg.get("meshfile", "beam2d.msh"))
+          , formulation  = "planeStrain"
     )
