@@ -1,0 +1,68 @@
+IMPORT "io.edp"
+load "msh3"
+load "gmsh"
+
+DEFAULT (youngModulus, 210e9)
+DEFAULT (poissonRatio, 0.3)
+DEFAULT (rhoMat, 7800)
+DEFAULT (grav, 9.81)
+
+real E     = $youngModulus;
+real sigma = $poissonRatio;
+real rho   = $rhoMat;
+real g     = $grav;
+
+
+real mu     = E / (2.*(1. + sigma));
+real lambda = E * sigma / ((1. + sigma) * (1. - 2.*sigma));
+
+// Read msh with gm 
+mesh3 Th = gmshload3("beam.msh");
+
+fespace Vh(Th, [P1, P1, P1]);
+Vh [ux, uy, uz], [vx, vy, vz];
+
+macro Epsilon(u1,u2,u3) [dx(u1),dy(u2),dz(u3),
+    (dy(u3)+dz(u2))/sqrt(2.),
+    (dz(u1)+dx(u3))/sqrt(2.),
+    (dx(u2)+dy(u1))/sqrt(2.)] // EOM
+macro Div(u1,u2,u3) (dx(u1)+dy(u2)+dz(u3)) // EOM
+
+problem Elasticite3D([ux,uy,uz],[vx,vy,vz], solver=sparsesolver) =
+    int3d(Th)(
+        lambda * Div(vx,vy,vz) * Div(ux,uy,uz)
+      + 2.*mu * (Epsilon(vx,vy,vz)' * Epsilon(ux,uy,uz))
+    )
+    + int3d(Th)(rho * g * vz)
+    + on(4, ux=0, uy=0, uz=0);
+
+Elasticite3D;
+
+cout << "uz simule = " << uz[].linfty << " m" << endl;
+
+fespace Sh(Th, P1);
+Sh ux2, uy2, uz2;
+ux2 = ux; uy2 = uy; uz2 = uz;
+
+real[int] dispX(Th.nv);
+real[int] dispY(Th.nv);
+real[int] dispZ(Th.nv);
+real[int] coordX(Th.nv);
+real[int] coordY(Th.nv);
+real[int] coordZ(Th.nv);
+
+for(int i = 0; i < Th.nv; i++){
+    dispX[i]  = ux2[][i];
+    dispY[i]  = uy2[][i];
+    dispZ[i]  = uz2[][i];
+    coordX[i] = Th(i).x;
+    coordY[i] = Th(i).y;
+    coordZ[i] = Th(i).z;
+}
+
+exportArray(dispX);
+exportArray(dispY);
+exportArray(dispZ);
+exportArray(coordX);
+exportArray(coordY);
+exportArray(coordZ);
