@@ -1,28 +1,19 @@
 IMPORT "io.edp"
+load "gmsh"
 
 DEFAULT (youngModulus, "210000")
 DEFAULT (rhoMat, "7.85e-6")
-DEFAULT (grav, "9810")
+DEFAULT (gravity, "9810")
 DEFAULT (poissonRatio, "0.3")
-DEFAULT (nx, "140")
-DEFAULT (ny, "35")
+DEFAULT (meshFile, "")
 
-real E      = $youngModulus;
-real sigma  = $poissonRatio;
-real rhoMat = $rhoMat;
-real grav   = $grav;
-real gravity = -rhoMat * grav;
-real F      = gravity;
-int  n      = $nx;
-int  m      = $ny;
+real E       = $youngModulus;
+real sigma   = $poissonRatio;
+real rhoMat  = $rhoMat;
+real gravity = $gravity;
+real F       = -rhoMat * gravity;
 
-
-// Mesh 
-border a(t=2, 0) {x=0;    y=t;   label=1;}
-border b(t=0,10) {x=t;    y=0;   label=2;}
-border c(t=0, 2) {x=10;   y=t;   label=3;}
-border d(t=0,10) {x=10-t; y=2;   label=4;}
-mesh th = buildmesh(b(n) + c(m) + d(n) + a(m));
+mesh th = gmshload("$meshFile");
 
 fespace Vh(th, [P1, P1]);
 Vh [uu, vv], [w, s];
