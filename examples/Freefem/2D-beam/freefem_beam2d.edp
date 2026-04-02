@@ -1,0 +1,46 @@
+IMPORT "io.edp"
+load "gmsh"
+
+DEFAULT (youngModulus, "210000")
+DEFAULT (rhoMat, "7.85e-6")
+DEFAULT (gravity, "9810")
+DEFAULT (poissonRatio, "0.3")
+DEFAULT (meshFile, "")
+
+real E       = $youngModulus;
+real sigma   = $poissonRatio;
+real rhoMat  = $rhoMat;
+real gravity = $gravity;
+real F       = -rhoMat * gravity;
+
+mesh th = gmshload("$meshFile");
+
+fespace Vh(th, [P1, P1]);
+Vh [uu, vv], [w, s];
+
+real sqrt2  = sqrt(2.);
+macro epsilon(u1,u2) [dx(u1), dy(u2), (dy(u1)+dx(u2))/sqrt2] // EOM
+macro div(u,v) (dx(u)+dy(v)) // EOM
+
+real mu     = E / (2*(1 + sigma));
+real lambda = E*sigma / ((1 + sigma)*(1 - 2*sigma));
+
+solve Elasticity([uu, vv], [w, s], solver=sparsesolver)
+    = int2d(th)(
+          lambda*div(w,s)*div(uu,vv)
+        + 2.*mu*(epsilon(w,s)' * epsilon(uu,vv))
+    )
+    - int2d(th)(F*s)
+    + on(1, uu=0, vv=0);
+
+exportArray(uu[]);
+exportArray(vv[]);
+
+real[int] xcoords(th.nv);
+real[int] ycoords(th.nv);
+for(int i = 0; i < th.nv; i++){
+    xcoords[i] = th(i).x;
+    ycoords[i] = th(i).y;
+}
+exportArray(xcoords);
+exportArray(ycoords);
