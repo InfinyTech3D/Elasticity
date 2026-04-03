@@ -1,23 +1,21 @@
 IMPORT "io.edp"
 load "msh3"
 load "gmsh"
-
-DEFAULT (youngModulus, 210e9)
+DEFAULT (youngModulus, 10000)
 DEFAULT (poissonRatio, 0.3)
-DEFAULT (rhoMat, 7800)
-DEFAULT (grav, 9.81)
+DEFAULT (rhoMat, 20)
+DEFAULT (grav, 10)
+DEFAULT (meshFile, "results/beam3d.msh")
 
 real E     = $youngModulus;
 real sigma = $poissonRatio;
 real rho   = $rhoMat;
 real g     = $grav;
 
-
 real mu     = E / (2.*(1. + sigma));
 real lambda = E * sigma / ((1. + sigma) * (1. - 2.*sigma));
 
-// Read msh with gm 
-mesh3 Th = gmshload3("beam.msh");
+mesh3 Th = gmshload3("$meshFile");
 
 fespace Vh(Th, [P1, P1, P1]);
 Vh [ux, uy, uz], [vx, vy, vz];
@@ -34,7 +32,7 @@ problem Elasticite3D([ux,uy,uz],[vx,vy,vz], solver=sparsesolver) =
       + 2.*mu * (Epsilon(vx,vy,vz)' * Epsilon(ux,uy,uz))
     )
     + int3d(Th)(rho * g * vz)
-    + on(4, ux=0, uy=0, uz=0);
+    + on(1, ux=0, uy=0, uz=0);   // FIXED: tag 1 = face gauche x=0 (clamped)
 
 Elasticite3D;
 

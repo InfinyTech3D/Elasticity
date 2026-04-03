@@ -37,13 +37,13 @@ def generate_beam3D(length, height, width, nx, ny, nz, filename):
     gmsh.model.mesh.setTransfiniteSurface(surf)
 
     # Recombine triangles → quads on the base face before extrusion
-    gmsh.model.mesh.setRecombine(2, surf)
+    #gmsh.model.mesh.setRecombine(2, surf)
 
     # Extrude surface to create volume
     extruded = gmsh.model.geo.extrude(
         [(2, surf)], 0, 0, width,
         numElements=[nz],
-        recombine=True,
+        #recombine=True,
     )
 
     gmsh.model.geo.synchronize()
@@ -53,15 +53,23 @@ def generate_beam3D(length, height, width, nx, ny, nz, filename):
 
     # Ensure the volume respects nx/ny/nz — required for the subdivision to
     # produce the correct number of tets.
-    gmsh.model.mesh.setTransfiniteVolume(volume_tag)
+   # gmsh.model.mesh.setTransfiniteVolume(volume_tag)
 
-    # Physical groups — boundary tags match .edp labels 1–4
-    gmsh.model.addPhysicalGroup(1, [left],   tag=1, name="Fixed")
-    gmsh.model.addPhysicalGroup(1, [bottom], tag=2, name="Bottom")
-    gmsh.model.addPhysicalGroup(1, [right],  tag=3, name="Right")
-    gmsh.model.addPhysicalGroup(1, [top],    tag=4, name="Top")
+    # Physical groups — dim=2 surface groups so FreeFEM's on() finds boundary triangles
+    # (in 3D, boundary elements are triangles on surfaces, not edges on curves)
+    _eps = 1e-9
+    def _surfs(xmin, ymin, zmin, xmax, ymax, zmax):
+        return [t for _, t in gmsh.model.getEntitiesInBoundingBox(
+            xmin, ymin, zmin, xmax, ymax, zmax, dim=2)]
+
+    gmsh.model.addPhysicalGroup(2, _surfs(-_eps,      -_eps,       -_eps,       _eps,        height+_eps, width+_eps),  tag=1, name="Fixed")
+    gmsh.model.addPhysicalGroup(2, _surfs(-_eps,      -_eps,       -_eps,       length+_eps, _eps,        width+_eps),  tag=2, name="Bottom")
+    gmsh.model.addPhysicalGroup(2, _surfs(length-_eps,-_eps,       -_eps,       length+_eps, height+_eps, width+_eps),  tag=3, name="Right")
+    gmsh.model.addPhysicalGroup(2, _surfs(-_eps,      height-_eps, -_eps,       length+_eps, height+_eps, width+_eps),  tag=4, name="Top")
+    gmsh.model.addPhysicalGroup(2, _surfs(-_eps,      -_eps,       -_eps,       length+_eps, height+_eps, _eps),        tag=6, name="BaseZ")
+    gmsh.model.addPhysicalGroup(2, _surfs(-_eps,      -_eps,       width-_eps,  length+_eps, height+_eps, width+_eps),  tag=7, name="TopZ")
     gmsh.model.addPhysicalGroup(3, [volume_tag], tag=5, name="Beam")
-    gmsh.option.setNumber("Mesh.SubdivisionAlgorithm", 2)
+    #gmsh.option.setNumber("Mesh.SubdivisionAlgorithm", 2)
 
     gmsh.model.mesh.generate(3)
     gmsh.model.mesh.setOrder(1)
