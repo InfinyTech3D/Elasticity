@@ -6,9 +6,10 @@ DEFAULT (rhoMat, "7.85e-6")
 DEFAULT (gravity, "9810")
 DEFAULT (poissonRatio, "0.3")
 DEFAULT (meshFile, "")
+DEFAULT (formulation, "planeStrain")
 
 real E       = $youngModulus;
-real sigma   = $poissonRatio;
+real nu      = $poissonRatio;
 real rhoMat  = $rhoMat;
 real gravity = $gravity;
 real F       = -rhoMat * gravity;
@@ -22,8 +23,12 @@ real sqrt2  = sqrt(2.);
 macro epsilon(u1,u2) [dx(u1), dy(u2), (dy(u1)+dx(u2))/sqrt2] // EOM
 macro div(u,v) (dx(u)+dy(v)) // EOM
 
-real mu     = E / (2*(1 + sigma));
-real lambda = E*sigma / ((1 + sigma)*(1 - 2*sigma));
+real mu     = E / (2*(1 + nu));
+IFEQ (formulation, "planeStrain")
+real lambda = E*nu / ((1 + nu)*(1 - 2*nu)); // 3D but z is constrained
+ELSE
+real lambda = E*nu / (1 - nu*nu); // Pure 2D
+ENDIF
 
 solve Elasticity([uu, vv], [w, s], solver=sparsesolver)
     = int2d(th)(
