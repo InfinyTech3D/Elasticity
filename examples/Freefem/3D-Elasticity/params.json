@@ -1,0 +1,13 @@
+{
+    "length": 1.0,
+    "height" : 0.2,
+    "width" : 0.2,
+    "nx": 20,
+    "ny": 7,
+    "nz": 7,
+    "rho": 20,
+    "gravity": 9.8,
+    "youngModulus": 210000,
+    "poissonRatio": 0.3,
+    "meshfile": "beam3d.msh"
+}
