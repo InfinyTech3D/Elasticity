@@ -1,0 +1,538 @@
+---
+title: "Déformations Planes et Contraintes Planes"
+subtitle: "Une introduction progressive à partir de Timoshenko & Goodier et Sidoroff"
+author: "IMACHE FATIMA"
+date: today
+lang: fr
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-title: "Table des matières"
+    number-sections: true
+    theme: cosmo
+    highlight-style: github
+    code-fold: true
+    fig-align: center
+    html-math-method: mathjax
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    geometry: margin=2.5cm
+    fontsize: 11pt
+    fig-align: center
+bibliography: references.bib
+---
+
+::: {.callout-note}
+## Sources utilisées
+Ce document s'appuie principalement sur deux ouvrages de référence :
+
+- **Timoshenko S. & Goodier J.N.** — *Theory of Elasticity*, McGraw-Hill, 1951 (Chapitres 1, 2, 3 et 4)
+- **Sidoroff F.** — *Mécanique des Milieux Continus*, École Centrale de Lyon, 1980 (Chapitres 2, 3 et 8)
+:::
+
+---
+
+# Introduction : Pourquoi passer en 2D ?
+
+La mécanique des solides déformables est, dans sa formulation générale, un problème à **trois dimensions** : chaque point d'un solide peut se déplacer selon les trois axes, les contraintes ont 6 composantes indépendantes, et les équations à résoudre sont couplées et complexes.
+
+Pourtant, dans de nombreuses situations d'ingénierie, la géométrie du solide ou la nature du chargement impose une simplification naturelle qui permet de **ramener le problème à deux dimensions**. Cette réduction n'est pas une approximation grossière : elle repose sur des hypothèses physiques précises et conduit à des solutions exactes (ou très précises) pour une large classe de problèmes réels.
+
+Il existe deux grandes hypothèses simplificatrices en élasticité bidimensionnelle :
+
+1. **L'état de déformations planes** (*plane strain*) — adapté aux corps épais ou allongés
+2. **L'état de contraintes planes** (*plane stress*) — adapté aux plaques minces
+
+Ces deux états sont les sujets centraux du **Chapitre 2** de Timoshenko & Goodier et du **Chapitre 8** de Sidoroff. Ce document les introduit progressivement, en partant des bases nécessaires.
+
+---
+
+# Rappels fondamentaux d'élasticité
+
+*Sources : Timoshenko & Goodier, Chapitre 1 (§1–6) ; Sidoroff, Chapitres 2–3*
+
+Avant d'aborder les états plans, il est indispensable de maîtriser quelques notions de base.
+
+## La notion de contrainte
+
+Quand on coupe mentalement un solide par un plan et qu'on regarde les forces exercées par une partie sur l'autre, on définit le **vecteur contrainte** $\mathbf{T}$ sur cette surface. Ce vecteur dépend de l'orientation de la surface considérée.
+
+Pour décrire complètement l'état de contrainte en un point, il faut connaître ce vecteur pour **toutes les orientations possibles**. C'est précisément ce que fait le **tenseur des contraintes** $\boldsymbol{\sigma}$, qui est une matrice $3 \times 3$ symétrique :
+
+$$
+\boldsymbol{\sigma} = \begin{pmatrix} \sigma_{xx} & \sigma_{xy} & \sigma_{xz} \\ \sigma_{xy} & \sigma_{yy} & \sigma_{yz} \\ \sigma_{xz} & \sigma_{yz} & \sigma_{zz} \end{pmatrix}
+$$
+
+- Les termes **diagonaux** $\sigma_{xx}, \sigma_{yy}, \sigma_{zz}$ sont des **contraintes normales** (traction ou compression).
+- Les termes **hors-diagonaux** $\sigma_{xy}, \sigma_{xz}, \sigma_{yz}$ sont des **contraintes de cisaillement**.
+
+::: {.callout-tip}
+## Interprétation physique
+$\sigma_{ij}$ représente la composante dans la direction $j$ de la force par unité d'aire exercée sur une facette de normale $i$.
+:::
+
+## La notion de déformation
+
+De même que les contraintes décrivent l'état de force interne, les **déformations** décrivent le changement de forme local du matériau. Le **tenseur des déformations linéarisées** $\boldsymbol{\varepsilon}$ est défini à partir du champ de déplacements $\mathbf{u} = (u, v, w)$ par :
+
+$$
+\varepsilon_{xx} = \frac{\partial u}{\partial x}, \quad
+\varepsilon_{yy} = \frac{\partial v}{\partial y}, \quad
+\varepsilon_{zz} = \frac{\partial w}{\partial z}
+$$
+
+$$
+\varepsilon_{xy} = \frac{1}{2}\left(\frac{\partial u}{\partial y} + \frac{\partial v}{\partial x}\right), \quad
+\varepsilon_{xz} = \frac{1}{2}\left(\frac{\partial u}{\partial z} + \frac{\partial w}{\partial x}\right), \quad
+\varepsilon_{yz} = \frac{1}{2}\left(\frac{\partial v}{\partial z} + \frac{\partial w}{\partial y}\right)
+$$
+
+::: {.callout-note}
+## Convention de Timoshenko
+Dans Timoshenko & Goodier, les déformations de cisaillement sont notées $\gamma_{xy} = 2\varepsilon_{xy}$ (déformation angulaire totale). Dans Sidoroff, on utilise $\varepsilon_{12} = \frac{1}{2}\gamma_{xy}$ (convention tensorielle). Les deux sont équivalentes.
+:::
+
+## La loi de Hooke généralisée
+
+Pour un matériau **élastique linéaire isotrope**, la relation entre contraintes et déformations est donnée par la **loi de Hooke généralisée**, qui fait intervenir deux paramètres matériaux :
+
+- $E$ : le **module de Young** (rigidité en traction)
+- $\nu$ : le **coefficient de Poisson** (contraction transversale, $0 < \nu < 0{,}5$)
+
+Les relations contraintes–déformations en 3D sont :
+
+$$
+\varepsilon_{xx} = \frac{1}{E}\left[\sigma_{xx} - \nu(\sigma_{yy} + \sigma_{zz})\right]
+$$
+
+$$
+\varepsilon_{yy} = \frac{1}{E}\left[\sigma_{yy} - \nu(\sigma_{xx} + \sigma_{zz})\right]
+$$
+
+$$
+\varepsilon_{zz} = \frac{1}{E}\left[\sigma_{zz} - \nu(\sigma_{xx} + \sigma_{yy})\right]
+$$
+
+$$
+\varepsilon_{xy} = \frac{1+\nu}{E}\,\sigma_{xy}, \quad \varepsilon_{xz} = \frac{1+\nu}{E}\,\sigma_{xz}, \quad \varepsilon_{yz} = \frac{1+\nu}{E}\,\sigma_{yz}
+$$
+
+## Les équations d'équilibre
+
+En l'absence de forces volumiques (ou avec une force volumique $\rho g$ selon $y$), l'équilibre du solide impose que le champ de contraintes vérifie en tout point :
+
+$$
+\frac{\partial \sigma_{xx}}{\partial x} + \frac{\partial \sigma_{xy}}{\partial y} = 0
+\qquad \text{(direction } x\text{)}
+$$
+
+$$
+\frac{\partial \sigma_{xy}}{\partial x} + \frac{\partial \sigma_{yy}}{\partial y} + \rho g = 0
+\qquad \text{(direction } y\text{)}
+$$
+
+Ces équations expriment simplement que la somme des forces sur tout élément de volume est nulle.
+
+---
+
+# L'état de Déformations Planes (*Plane Strain*)
+
+*Sources : Timoshenko & Goodier, Chapitre 2 §8 ; Sidoroff §8.1.1*
+
+## Définition et hypothèse physique
+
+L'état de déformations planes s'applique lorsque la géométrie et le chargement présentent une **très grande longueur dans une direction** — appelée la direction $z$ — et que le chargement est **perpendiculaire à cet axe** et **uniforme le long de celui-ci**.
+
+Dans ce cas, il est raisonnable de supposer que **le déplacement dans la direction $z$ est nul**, et que les déplacements $u$ et $v$ ne dépendent pas de $z$ :
+
+$$
+\boxed{u = u(x,y), \quad v = v(x,y), \quad w = 0}
+$$
+
+C'est l'**hypothèse de déformations planes**.
+
+## Exemples physiques typiques
+
+::: {.callout-important}
+## Quand utilise-t-on les déformations planes ?
+- Un **barrage** en béton : très long selon son axe, chargé par la pression de l'eau dans le plan transversal
+- Un **tunnel** ou un **puits cylindrique** : section constante sur toute la longueur
+- Un **cylindre sous pression interne** de grande longueur
+- Un **rouleau compresseur** (Fig. 11 dans Timoshenko) : comprimer par une force perpendiculaire à l'axe
+:::
+
+Dans tous ces cas, le comportement au centre (loin des extrémités) est bien décrit par l'hypothèse de déformations planes.
+
+## Conséquences sur les déformations
+
+L'hypothèse $w=0$ et l'indépendance en $z$ entraînent immédiatement, d'après les formules de définition des déformations :
+
+$$
+\varepsilon_{xz} = \frac{1}{2}\left(\frac{\partial u}{\partial z} + \frac{\partial w}{\partial x}\right) = 0
+$$
+
+$$
+\varepsilon_{yz} = \frac{1}{2}\left(\frac{\partial v}{\partial z} + \frac{\partial w}{\partial y}\right) = 0
+$$
+
+$$
+\varepsilon_{zz} = \frac{\partial w}{\partial z} = 0
+$$
+
+Le tenseur des déformations se réduit donc à :
+
+$$
+\boldsymbol{\varepsilon} = \begin{pmatrix} \varepsilon_{xx} & \varepsilon_{xy} & 0 \\ \varepsilon_{xy} & \varepsilon_{yy} & 0 \\ 0 & 0 & 0 \end{pmatrix}
+$$
+
+Seules les composantes **dans le plan** $(x,y)$ sont non nulles.
+
+## Conséquences sur les contraintes — attention !
+
+Un résultat important et **non intuitif** : même si la déformation $\varepsilon_{zz} = 0$, la contrainte $\sigma_{zz}$ n'est **pas** nulle !
+
+En utilisant la loi de Hooke pour la composante $zz$ :
+
+$$
+\varepsilon_{zz} = \frac{1}{E}\left[\sigma_{zz} - \nu(\sigma_{xx} + \sigma_{yy})\right] = 0
+$$
+
+On en tire directement :
+
+$$
+\boxed{\sigma_{zz} = \nu\,(\sigma_{xx} + \sigma_{yy})}
+$$
+
+Cette contrainte axiale $\sigma_{zz}$ est la **réaction des parois rigides** qui empêchent le déplacement en $z$ (dans un corps long, les sections centrales sont "retenues" par les sections voisines).
+
+## Équations réduites — loi de comportement en 2D
+
+En substituant l'expression de $\sigma_{zz}$ dans la loi de Hooke, les relations contraintes–déformations **dans le plan** deviennent :
+
+$$
+E\,\varepsilon_{xx} = (1-\nu^2)\,\sigma_{xx} - \nu(1+\nu)\,\sigma_{yy}
+$$
+
+$$
+E\,\varepsilon_{yy} = (1-\nu^2)\,\sigma_{yy} - \nu(1+\nu)\,\sigma_{xx}
+$$
+
+$$
+E\,\varepsilon_{xy} = (1+\nu)\,\sigma_{xy}
+$$
+
+Le problème est maintenant entièrement 2D : on cherche les fonctions $u(x,y)$, $v(x,y)$ et $\sigma_{xx}$, $\sigma_{yy}$, $\sigma_{xy}$ en fonction des coordonnées $(x,y)$.
+
+---
+
+# L'état de Contraintes Planes (*Plane Stress*)
+
+*Sources : Timoshenko & Goodier, Chapitre 2 §7 ; Sidoroff §8.1.2*
+
+## Définition et hypothèse physique
+
+L'état de contraintes planes s'applique à une **plaque mince** chargée **dans son propre plan**. Puisque la plaque est fine (faible épaisseur selon $z$), les faces supérieure et inférieure sont libres de toute contrainte normale et tangentielle.
+
+Cela se traduit par la condition aux limites :
+
+$$
+\text{sur les faces } z = \pm h/2 : \quad \sigma_{xz} = \sigma_{yz} = \sigma_{zz} = 0
+$$
+
+Pour une plaque suffisamment mince, on peut supposer que ces composantes sont **nulles dans tout l'épaisseur** :
+
+$$
+\boxed{\sigma_{xz} = \sigma_{yz} = \sigma_{zz} = 0}
+$$
+
+C'est l'**hypothèse de contraintes planes**.
+
+## Exemples physiques typiques
+
+::: {.callout-important}
+## Quand utilise-t-on les contraintes planes ?
+- Une **plaque mince métallique** chargée dans son plan (tôle, voile de structure)
+- Une **aile d'avion** (panneaux de peau sollicités dans leur plan)
+- Un **disque tournant** (roue, turbine)
+- Une **plaque perforée sous traction** (étude de concentration de contraintes)
+:::
+
+## Conséquences sur les déformations — attention !
+
+Ici c'est l'inverse : on annule les contraintes hors-plan, mais les **déformations hors-plan ne sont pas nulles**.
+
+En particulier, d'après la loi de Hooke avec $\sigma_{zz} = 0$ :
+
+$$
+\varepsilon_{zz} = -\frac{\nu}{E}\left(\sigma_{xx} + \sigma_{yy}\right) \neq 0
+$$
+
+La plaque se contracte (ou se dilate) en épaisseur, mais cette variation d'épaisseur est **une conséquence**, pas une inconnue du problème.
+
+Le tenseur des contraintes se réduit à :
+
+$$
+\boldsymbol{\sigma} = \begin{pmatrix} \sigma_{xx}(x,y) & \sigma_{xy}(x,y) & 0 \\ \sigma_{xy}(x,y) & \sigma_{yy}(x,y) & 0 \\ 0 & 0 & 0 \end{pmatrix}
+$$
+
+## Équations réduites — loi de comportement en 2D
+
+Les relations contraintes–déformations dans le plan sont plus simples qu'en déformations planes :
+
+$$
+E\,\varepsilon_{xx} = \sigma_{xx} - \nu\,\sigma_{yy}
+$$
+
+$$
+E\,\varepsilon_{yy} = \sigma_{yy} - \nu\,\sigma_{xx}
+$$
+
+$$
+E\,\varepsilon_{xy} = (1+\nu)\,\sigma_{xy}
+$$
+
+---
+
+# Comparaison et unification des deux états
+
+*Sources : Timoshenko & Goodier §8 ; Sidoroff §8.1*
+
+## Tableau comparatif
+
+| | **Déformations planes** | **Contraintes planes** |
+|---|:---:|:---:|
+| **Hypothèse** | $\varepsilon_{zz} = 0$ | $\sigma_{zz} = 0$ |
+| **Conséquence** | $\sigma_{zz} = \nu(\sigma_{xx}+\sigma_{yy}) \neq 0$ | $\varepsilon_{zz} = -\frac{\nu}{E}(\sigma_{xx}+\sigma_{yy}) \neq 0$ |
+| **Géométrie typique** | Corps épais, long selon $z$ | Plaque mince |
+| **Exemples** | Barrage, tunnel, cylindre | Tôle, disque, plaque perforée |
+| **Déplacements** | $u,v$ indépendants de $z$, $w=0$ | $u,v$ dans le plan, $w \neq 0$ |
+
+: Comparaison des deux états plans {tbl-colwidths="[30,35,35]"}
+
+## Une analogie remarquable
+
+Sidoroff (§8.1, éq. 8.24) montre que les équations des deux états peuvent être mises sous une **forme unifiée**. Les équations en déplacements sont formellement identiques, à condition de remplacer :
+
+$$
+\nu \longrightarrow \frac{\nu}{1+\nu} \quad \text{(passage déf. planes → contr. planes)}
+$$
+
+Autrement dit, un code de calcul écrit pour les déformations planes peut résoudre les problèmes de contraintes planes en modifiant simplement ce paramètre. C'est une propriété très utile en pratique.
+
+## Les équations d'équilibre — identiques pour les deux cas
+
+Les équations d'équilibre 2D sont les mêmes dans les deux cas (en l'absence de forces volumiques) :
+
+$$
+\frac{\partial \sigma_{xx}}{\partial x} + \frac{\partial \sigma_{xy}}{\partial y} = 0, \qquad
+\frac{\partial \sigma_{xy}}{\partial x} + \frac{\partial \sigma_{yy}}{\partial y} = 0
+$$
+
+## L'équation de compatibilité
+
+Pour que les déformations correspondent bien à un champ de déplacements continu (sans "trous" ni "superpositions"), elles doivent vérifier une **condition de compatibilité**. En 2D, cette condition unique s'écrit :
+
+$$
+\frac{\partial^2 \varepsilon_{xx}}{\partial y^2} + \frac{\partial^2 \varepsilon_{yy}}{\partial x^2} = 2\,\frac{\partial^2 \varepsilon_{xy}}{\partial x\,\partial y}
+$$
+
+En exprimant les déformations en fonction des contraintes via la loi de Hooke, et en utilisant les équations d'équilibre, Timoshenko (éq. 24–25) et Sidoroff montrent que cette équation se transforme, pour les contraintes, en :
+
+$$
+\boxed{\left(\frac{\partial^2}{\partial x^2} + \frac{\partial^2}{\partial y^2}\right)(\sigma_{xx} + \sigma_{yy}) = 0}
+$$
+
+::: {.callout-note}
+## L'équation de Beltrami-Michell en 2D
+Cette équation, dite de **Beltrami-Michell**, est la même pour les déformations planes et les contraintes planes (sans forces volumiques). Elle stipule que la **somme des contraintes normales** $\sigma_{xx} + \sigma_{yy}$ est une fonction **harmonique** (elle vérifie l'équation de Laplace $\Delta f = 0$).
+:::
+
+---
+
+# La Fonction de Contrainte d'Airy
+
+*Sources : Timoshenko & Goodier §16 (p. 26–27) ; Sidoroff §8.1 (éq. 8.8–8.11)*
+
+## Motivation : réduire à une seule inconnue
+
+À ce stade, le problème 2D comporte trois inconnues de contrainte — $\sigma_{xx}$, $\sigma_{yy}$, $\sigma_{xy}$ — soumises à :
+
+- 2 équations d'équilibre
+- 1 équation de compatibilité (Beltrami-Michell)
+
+L'idée géniale de **G.B. Airy (1862)** est d'introduire une **fonction scalaire** $\varphi(x,y)$ telle que les équations d'équilibre soient **automatiquement satisfaites**. On définit :
+
+$$
+\boxed{
+\sigma_{xx} = \frac{\partial^2 \varphi}{\partial y^2}, \qquad
+\sigma_{yy} = \frac{\partial^2 \varphi}{\partial x^2}, \qquad
+\sigma_{xy} = -\frac{\partial^2 \varphi}{\partial x\,\partial y}
+}
+$$
+
+On peut vérifier immédiatement que ces expressions satisfont les équations d'équilibre, quelles que soient la forme de $\varphi$. C'est l'**fonction de contrainte d'Airy**, aussi appelée **fonction potentielle de contrainte**.
+
+## L'équation biharmonique
+
+Il reste à imposer la compatibilité des déformations. En substituant les expressions ci-dessus dans l'équation de Beltrami-Michell, on obtient une seule équation pour $\varphi$ :
+
+$$
+\boxed{
+\frac{\partial^4 \varphi}{\partial x^4} + 2\,\frac{\partial^4 \varphi}{\partial x^2 \partial y^2} + \frac{\partial^4 \varphi}{\partial y^4} = 0
+}
+$$
+
+Soit, de façon compacte :
+
+$$
+\Delta\Delta\varphi = \nabla^4\varphi = 0
+$$
+
+C'est l'**équation biharmonique**. $\varphi$ est dite **fonction biharmonique**.
+
+::: {.callout-important}
+## Ce que cela signifie
+Résoudre un problème d'élasticité plane revient à trouver une fonction $\varphi(x,y)$ :
+
+1. **Biharmonique** : $\nabla^4\varphi = 0$ dans le domaine
+2. **Vérifiant les conditions aux limites** sur le contour du solide
+
+Une fois $\varphi$ trouvée, les contraintes s'obtiennent par dérivation, les déformations par la loi de Hooke, et les déplacements par intégration.
+:::
+
+## Méthodes de résolution
+
+### Par polynômes (Timoshenko Chap. 3 ; Sidoroff §8.2.1)
+
+L'approche la plus directe consiste à chercher $\varphi$ sous forme de **polynôme** en $x$ et $y$. Tout polynôme de degré $\leq 3$ est automatiquement biharmonique. Pour les degrés supérieurs, certaines contraintes s'imposent.
+
+**Exemple — degré 2 (état de contrainte uniforme) :**
+
+$$
+\varphi = \frac{1}{2}\left(\alpha x^2 + 2\beta xy + \gamma y^2\right)
+\quad \Longrightarrow \quad
+\sigma_{xx} = \gamma, \quad \sigma_{yy} = \alpha, \quad \sigma_{xy} = -\beta
+$$
+
+**Exemple — degré 3 (état de contrainte linéaire, flexion pure) :**
+
+$$
+\varphi = \frac{d}{6}y^3
+\quad \Longrightarrow \quad
+\sigma_{xx} = dy, \quad \sigma_{yy} = 0, \quad \sigma_{xy} = 0
+$$
+
+Ce résultat correspond à la **distribution linéaire de contraintes normales** en flexion pure d'une poutre — résultat cohérent avec la résistance des matériaux.
+
+### Par fonctions complexes (Sidoroff §8.1.3)
+
+Sidoroff montre (théorème de représentation, éq. 8.28) que toute fonction biharmonique réelle peut s'écrire :
+
+$$
+\varphi(x,y) = \text{Re}\left[\bar{z}\,G(z) + K(z)\right]
+$$
+
+où $z = x + iy$ est la variable complexe, et $G$, $K$ sont des fonctions **holomorphes**. Cette représentation est à la base de la **méthode de Muskhelishvili** et permet de traiter des géométries très générales.
+
+---
+
+# Application : Plaque Infinie Perforée sous Traction
+
+*Sources : Timoshenko & Goodier Chap. 4 §33 ; Sidoroff §8.2.2*
+
+C'est l'exemple emblématique de l'élasticité plane : une plaque mince **infinie** comportant un **trou circulaire** de rayon $a$, soumise à une traction uniforme $\sigma_\infty$ à l'infini selon l'axe $y$.
+
+## Mise en place du problème
+
+Loin du trou, l'état de contrainte est simplement :
+
+$$
+\boldsymbol{\sigma}_\infty = \begin{pmatrix} 0 & 0 \\ 0 & \sigma_\infty \end{pmatrix}
+$$
+
+Sur la surface du trou ($r = a$), les contraintes normales et tangentielles sont nulles (surface libre) :
+
+$$
+\text{sur } r = a : \quad \sigma_{rr} = \sigma_{r\theta} = 0
+$$
+
+## Solution en coordonnées polaires
+
+Sidoroff (éq. 8.50) donne la solution exacte suivante :
+
+$$
+\sigma_{rr} = \frac{\sigma_\infty}{2}\left(1 - \frac{a^2}{r^2}\right) - \frac{\sigma_\infty}{2}\left(1 - \frac{4a^2}{r^2} + \frac{3a^4}{r^4}\right)\cos 2\theta
+$$
+
+$$
+\sigma_{r\theta} = \frac{\sigma_\infty}{2}\left(1 - \frac{2a^2}{r^2} + \frac{3a^4}{r^4}\right)\sin 2\theta
+$$
+
+$$
+\sigma_{\theta\theta} = \frac{\sigma_\infty}{2}\left(1 + \frac{a^2}{r^2}\right) + \frac{\sigma_\infty}{2}\left(1 + \frac{3a^4}{r^4}\right)\cos 2\theta
+$$
+
+## Résultat clé : concentration de contraintes
+
+Sur le bord du trou ($r = a$), la contrainte orthoradiale vaut :
+
+$$
+\boxed{\sigma_{\theta\theta}\big|_{r=a} = \sigma_\infty(1 + 2\cos 2\theta)}
+$$
+
+| Position sur le trou | $\theta$ | $\sigma_{\theta\theta}$ |
+|:---:|:---:|:---:|
+| Bord latéral ($\perp$ à la traction) | $0°$ | $+3\sigma_\infty$ |
+| Bord supérieur (dans l'axe de traction) | $90°$ | $-\sigma_\infty$ |
+
+::: {.callout-warning}
+## Facteur de concentration de contrainte $K_t = 3$
+La contrainte maximale sur le bord du trou est **trois fois** la contrainte appliquée à l'infini. C'est le **facteur de concentration de contraintes** de Kirsch (1898).
+
+Ce résultat est fondamental en **dimensionnement des structures** : la présence d'un trou, même petit, multiplie les contraintes locales par un facteur 3. Cela explique pourquoi les trous de fixation, encoches et entailles sont des zones critiques à surveiller.
+:::
+
+---
+
+# Résumé des équations clés
+
+## Déformations planes
+
+| Quantité | Expression |
+|---|---|
+| Hypothèse | $w=0$, $u=u(x,y)$, $v=v(x,y)$ |
+| Déformations nulles | $\varepsilon_{zz} = \varepsilon_{xz} = \varepsilon_{yz} = 0$ |
+| Contrainte axiale | $\sigma_{zz} = \nu(\sigma_{xx}+\sigma_{yy})$ |
+| Loi de comportement réduite | $E\varepsilon_{xx} = (1-\nu^2)\sigma_{xx} - \nu(1+\nu)\sigma_{yy}$ |
+
+## Contraintes planes
+
+| Quantité | Expression |
+|---|---|
+| Hypothèse | $\sigma_{zz} = \sigma_{xz} = \sigma_{yz} = 0$ |
+| Déformation axiale | $\varepsilon_{zz} = -\frac{\nu}{E}(\sigma_{xx}+\sigma_{yy})$ |
+| Loi de comportement réduite | $E\varepsilon_{xx} = \sigma_{xx} - \nu\sigma_{yy}$ |
+
+## Équations communes (valides pour les deux états)
+
+$$
+\text{Équilibre :} \quad \frac{\partial \sigma_{xx}}{\partial x} + \frac{\partial \sigma_{xy}}{\partial y} = 0, \quad \frac{\partial \sigma_{xy}}{\partial x} + \frac{\partial \sigma_{yy}}{\partial y} = 0
+$$
+
+$$
+\text{Compatibilité :} \quad \Delta(\sigma_{xx} + \sigma_{yy}) = 0
+$$
+
+$$
+\text{Fonction d'Airy :} \quad \sigma_{xx} = \varphi_{,yy}, \quad \sigma_{yy} = \varphi_{,xx}, \quad \sigma_{xy} = -\varphi_{,xy}
+$$
+
+$$
+\text{Équation biharmonique :} \quad \nabla^4\varphi = 0
+$$
+
+ 
+

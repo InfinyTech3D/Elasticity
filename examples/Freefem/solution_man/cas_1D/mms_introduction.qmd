@@ -1,0 +1,291 @@
+---
+title: "La Méthode des Solutions Manufacturées (MMS)"
+subtitle: "Principes, application et vérification de code en élasticité linéaire"
+author: "IMACHE Fatima"
+date: today
+lang: fr
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    theme: cosmo
+    code-fold: false
+  pdf:
+    toc: true
+    number-sections: true
+    geometry: margin=2.5cm
+bibliography: reference.bib
+---
+
+## Introduction
+
+La vérification d'un code éléments finis est une étape indispensable avant toute utilisation sérieuse. Une erreur de codage — même minime — peut produire des résultats plausibles en apparence, tout en étant faux. La **Méthode des Solutions Manufacturées** (MMS, *Method of Manufactured Solutions*) offre un cadre rigoureux et systématique pour détecter ces erreurs et confirmer que le code résout correctement les équations qu'il est censé résoudre.
+
+Ce document répond aux questions suivantes :
+
+1. Qu'est-ce que la MMS et pourquoi l'utiliser ?
+2. Comment l'appliquer concrètement (1D puis 2D) ?
+3. Quelle métrique utiliser pour mesurer la précision ?
+
+---
+
+## Qu'est-ce que la MMS ? Pourquoi l'utiliser ?
+
+### Principe général
+
+La MMS repose sur une idée simple : **partir d'une solution analytique choisie à l'avance**, puis calculer le terme source (force volumique, condition aux limites) qui lui correspond exactement dans l'EDP considérée. On résout ensuite le problème modifié avec le code numérique, et on compare la solution obtenue à la solution exacte connue.
+
+Formellement, pour une EDP de la forme :
+
+$$
+\mathcal{L}(u) = f \quad \text{sur } \Omega
+$$
+
+on choisit une fonction $u^*$ quelconque (la **solution manufacturée**), on calcule $f^* = \mathcal{L}(u^*)$ par différentiation symbolique, puis on résout :
+
+$$
+\mathcal{L}(u_h) = f^* \quad \text{sur } \Omega
+$$
+
+La solution numérique $u_h$ doit converger vers $u^*$ lorsque le maillage est raffiné.
+
+### Pourquoi ne pas utiliser des solutions analytiques classiques ?
+
+Les problèmes admettant une solution analytique exacte sont **rares et souvent trop simples** : domaines rectangulaires, chargements constants, conditions aux limites triviales. Ces cas particuliers ne sollicitent qu'une partie des termes de la formulation variationnelle. Une erreur dans un terme couplé ou dans le traitement des conditions de Neumann peut ainsi passer inaperçue.
+
+Un avantage supplémentaire de la MMS est que l'on peut **choisir librement la régularité** de la solution manufacturée $u^*$. En optant pour une fonction d'ordre strictement supérieur à celui de la discrétisation, on s'assure que les taux de convergence observés reflètent bien les propriétés du schéma numérique, et non une limitation de la régularité de la solution.
+
+::: {.callout-note}
+## Avantage clé de la MMS
+La MMS permet de tester le code **en pleine généralité** : solution non-triviale, domaine courbe, conditions de Neumann inhomogènes. Comme le soulignent @chamberland2010, la MMS peut servir simultanément à trois fins : (1) vérifier l'implémentation, (2) vérifier l'ordre de convergence théorique, et (3) comparer les performances de différentes discrétisations.
+:::
+
+### Que vérifie-t-on exactement ?
+
+La MMS est un outil de **vérification de code** (*code verification*), à distinguer de la **validation** (*validation*). Elle répond à la question : *"le code résout-il correctement les équations discrétisées ?"* — et non *"les équations modélisent-elles fidèlement la physique ?"*
+
+Plus précisément, on vérifie que :
+
+- les termes de la forme faible sont correctement intégrés,
+- les conditions aux limites (Dirichlet et Neumann) sont correctement imposées,
+- l'ordre de convergence observé correspond à l'ordre théorique prédit par l'analyse d'erreur.
+
+---
+
+## Comment appliquer la MMS
+
+### Étapes générales
+
+Les étapes de construction d'une solution manufacturée, telles que décrites dans @chamberland2010 pour l'élasticité grande déformation, se généralisent naturellement au cas linéaire :
+
+1. **Choisir** une solution manufacturée $u^*$ suffisamment régulière et d'ordre supérieur à celui de la discrétisation ;
+2. **Choisir** les propriétés matérielles ($E$, $\nu$ ou $\lambda$, $\mu$) ;
+3. **Calculer** analytiquement les champs dérivés (gradient, tenseur des déformations, contraintes) ;
+4. **Calculer** le terme source $f^* = -\nabla \cdot \sigma(u^*)$ (force volumique artificielle) ;
+5. **Choisir** le domaine $\Omega$ et calculer les conditions aux limites exactes ;
+6. **Résoudre** le problème modifié avec le code numérique sur une suite de maillages raffinés ;
+7. **Mesurer** l'erreur $\|u^* - u_h\|$ et vérifier la convergence.
+
+> Les étapes 3 et 4 sont idéalement effectuées avec un outil de calcul symbolique (Maple, SymPy, Mathematica).
+
+### Exemple 1D : barre élastique
+
+#### Problème continu
+
+On considère une barre de longueur $L = 1$, encastrée en $x = 0$ et libre en $x = 1$, soumise à une force volumique $f(x)$. Le problème d'élasticité linéaire 1D s'écrit :
+
+$$
+-\frac{d}{dx}\left(E \frac{du}{dx}\right) = f(x), \quad x \in (0, 1)
+$$
+
+avec les conditions aux limites :
+
+$$
+u(0) = 0 \quad \text{(Dirichlet)}, \qquad E \frac{du}{dx}(1) = 0 \quad \text{(Neumann libre)}
+$$
+
+On prend $E = 1$ pour simplifier.
+
+#### Choix de la solution manufacturée
+
+On choisit une fonction régulière qui satisfait la condition de Dirichlet en $x = 0$ :
+
+$$
+u^*(x) = \sin(\pi x)
+$$
+
+#### Calcul du terme source
+
+On substitue $u^*$ dans l'EDP :
+
+$$
+f^*(x) = -\frac{d^2 u^*}{dx^2} = \pi^2 \sin(\pi x)
+$$
+
+La condition de Neumann exacte en $x = 1$ devient :
+
+$$
+E \frac{du^*}{dx}(1) = \pi \cos(\pi) = -\pi
+$$
+
+#### Problème manufacturé à résoudre
+
+On résout numériquement :
+
+$$
+-u_h'' = \pi^2 \sin(\pi x), \quad u_h(0) = 0, \quad u_h'(1) = -\pi
+$$
+
+dont la solution exacte est $u^*(x) = \sin(\pi x)$.
+
+#### Travail sur papier et en programmation
+
+**Sur papier :**
+
+- Dériver $u^*$ pour obtenir $f^*$ et les conditions aux limites exactes
+- Vérifier la forme faible : $\int_0^1 E u_h' v' \, dx = \int_0^1 f^* v \, dx + [E u' v]_{\Gamma_N}$
+
+**En programmation :**
+
+- Implémenter le terme source $f^*(x) = \pi^2 \sin(\pi x)$ comme force volumique
+- Imposer la condition de Neumann $g = -\pi$ en $x = 1$
+- Résoudre sur une suite de maillages $h = 1/4, 1/8, 1/16, 1/32, \ldots$
+- Calculer l'erreur $\|u^* - u_h\|_{L^2}$ et $\|u^* - u_h\|_{H^1}$ sur chaque maillage
+- Tracer l'erreur en fonction de $h$ en échelle log-log et mesurer la pente
+
+### Exemple 2D : plaque élastique
+
+#### Problème continu
+
+Sur le domaine carré $\Omega = (0,1)^2$, les équations de Lamé s'écrivent en composantes :
+
+$$
+-(\lambda + \mu)\nabla(\nabla \cdot \mathbf{u}) - \mu \Delta \mathbf{u} = \mathbf{f} \quad \text{sur } \Omega
+$$
+
+avec $\mathbf{u} = (u_1, u_2)^T$ et les coefficients de Lamé $\lambda$, $\mu$ liés à $E$ et $\nu$ par :
+
+$$
+\lambda = \frac{E\nu}{(1+\nu)(1-2\nu)}, \qquad \mu = \frac{E}{2(1+\nu)}
+$$
+
+On prend $E = 1$ et $\nu = 0.3$, ce qui donne numériquement $\lambda \approx 0.577$ et $\mu \approx 0.385$.
+
+On impose des conditions de Dirichlet sur tout le bord : $\mathbf{u} = \mathbf{u}^*$ sur $\partial\Omega$.
+
+#### Choix de la solution manufacturée
+
+On prend :
+
+$$
+u_1^*(x, y) = \sin(\pi x)\sin(\pi y), \qquad u_2^*(x, y) = \cos(\pi x)\cos(\pi y)
+$$
+
+Ces fonctions sont régulières et permettent de solliciter **tous les termes** du tenseur de contraintes, y compris les termes couplés $\varepsilon_{12}$.
+
+#### Calcul du terme source
+
+Par calcul symbolique (ex. avec SymPy), on obtient le tenseur des déformations :
+
+$$
+\varepsilon_{ij}(\mathbf{u}^*) = \frac{1}{2}\left(\frac{\partial u_i^*}{\partial x_j} + \frac{\partial u_j^*}{\partial x_i}\right)
+$$
+
+puis le tenseur des contraintes (loi de Hooke) :
+
+$$
+\sigma_{ij} = \lambda \, \delta_{ij} \, \varepsilon_{kk} + 2\mu \, \varepsilon_{ij}
+$$
+
+et enfin la force volumique artificielle :
+
+$$
+f_i^* = -\frac{\partial \sigma_{ij}}{\partial x_j}
+$$
+
+Les expressions de $f_1^*$ et $f_2^*$ résultant de cette différentiation symbolique sont ensuite injectées telles quelles dans le problème variationnel. Les conditions aux limites de Dirichlet sont directement données par $\mathbf{u}^*$ sur $\partial\Omega$.
+
+#### Travail sur papier et en programmation
+
+**Sur papier :**
+
+- Écrire la forme faible : trouver $\mathbf{u}_h \in V_h$ tel que $\forall \mathbf{v}_h \in V_h$ :
+$$
+\int_\Omega \sigma(\mathbf{u}_h) : \varepsilon(\mathbf{v}_h) \, d\Omega = \int_\Omega \mathbf{f}^* \cdot \mathbf{v}_h \, d\Omega
+$$
+- Vérifier que $\mathbf{u}^*$ satisfait bien cette forme faible avec $\mathbf{f}^*$ calculé.
+
+**En programmation (ex. FreeFEM++) :**
+
+```freefem
+// Définir la solution manufacturée
+func u1exact = sin(pi*x)*sin(pi*y);
+func u2exact = cos(pi*x)*cos(pi*y);
+
+// f1* et f2* sont calculés au préalable par différentiation symbolique (ex. SymPy)
+// puis injectés comme termes sources dans le problème variationnel
+func f1 = ...; // expression analytique obtenue symboliquement
+func f2 = ...; // idem
+```
+
+- Résoudre sur des maillages de plus en plus fins
+- Calculer $\|u_i^* - u_{h,i}\|_{L^2(\Omega)}$ et $\|\mathbf{u}^* - \mathbf{u}_h\|_{H^1(\Omega)}$
+- Vérifier que les pentes log-log correspondent aux ordres théoriques
+
+---
+
+## Métrique de précision et comportement attendu
+
+### Normes d'erreur
+
+La précision d'une solution éléments finis par rapport à la solution manufacturée $u^*$ est mesurée par deux normes principales :
+
+$$
+\|u^* - u_h\|_{L^2(\Omega)} = \left(\int_\Omega |u^* - u_h|^2 \, d\Omega\right)^{1/2}
+$$
+
+$$
+\|u^* - u_h\|_{H^1(\Omega)} = \left(\int_\Omega \left(|u^* - u_h|^2 + |\nabla(u^* - u_h)|^2\right) d\Omega\right)^{1/2}
+$$
+
+La norme $H^1$ est particulièrement pertinente pour les problèmes elliptiques car elle contrôle à la fois le déplacement et le gradient (donc indirectement les déformations et contraintes).
+
+### Ordre de convergence attendu
+
+Pour des éléments finis de Lagrange d'ordre $k$, la théorie prédit les taux de convergence suivants lorsque $h \to 0$ :
+
+| Norme | Ordre attendu |
+|-------|--------------|
+| $L^2$ | $O(h^{k+1})$ |
+| $H^1$ | $O(h^k)$ |
+
+En pratique, on trace $\log(\text{erreur})$ en fonction de $\log(h)$ : la pente de cette droite doit correspondre à l'ordre théorique. @chamberland2010 illustrent ce résultat pour des éléments $Q_1$ (pente $\approx$ 1), $Q_2$ (pente $\approx$ 2) et $P_2$ (pente $\approx$ 2,16) en grande déformation — les mêmes ordres s'observent en petite déformation linéaire.
+
+### Pourquoi la norme $L^2$ converge-t-elle ?
+
+La convergence en norme $L^2$ résulte directement de deux ingrédients :
+
+1. **La consistance** : la solution manufacturée $u^*$ satisfait exactement les équations continues avec le terme source $f^*$. L'erreur de troncature tend vers zéro avec $h$.
+
+2. **La stabilité** : pour les problèmes elliptiques (dont l'élasticité linéaire), la coercivité de la forme bilinéaire garantit que l'erreur en énergie (norme $H^1$) est bornée par l'erreur d'approximation. Le **lemme d'Aubin–Nitsche** permet ensuite de gagner un ordre supplémentaire en norme $L^2$.
+
+::: {.callout-important}
+## Ce que révèle un taux non conforme
+Si la pente observée est inférieure à l'ordre théorique, cela signale soit une **erreur de codage** (terme mal implémenté, condition aux limites incorrecte), soit un problème de **régularité insuffisante** de la solution manufacturée choisie, soit encore un **schéma d'intégration numérique** trop peu précis pour les termes sources complexes générés par la MMS.
+:::
+
+---
+
+## Conclusion
+
+La MMS est un outil de vérification **systématique et rigoureux**. Elle permet de tester le code dans des conditions proches des cas réels (solutions non triviales, termes couplés, conditions aux limites générales) tout en disposant d'une référence exacte. La procédure est la même quelle que soit la dimension : choisir $u^*$, calculer $f^*$ symboliquement, résoudre le problème modifié, et vérifier la convergence en norme $H^1$ ou $L^2$.
+
+Dans la suite de ce travail, cette méthode sera appliquée pour vérifier l'implémentation d'un plugin SOFA d'élasticité linéaire sur maillages hexaédriques.
+
+---
+
+## Références
+
+::: {#refs}
+:::

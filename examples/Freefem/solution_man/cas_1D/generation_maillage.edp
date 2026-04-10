@@ -1,0 +1,11 @@
+// Generer un fichier msh pour l'utiliser en freefem et en sofa vu qu'avec Gmsh freefem ne le lit pas; 
+load "gmsh"
+
+real L = 1.0;
+int n = 32;
+
+meshL Th = segment(n, [x*L]);
+
+
+system("mkdir results"); 
+savegmsh(Th, "results/bar1d");
