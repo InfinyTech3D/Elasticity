@@ -1,0 +1,63 @@
+// ============================================================
+// 1D Bar - MMS Solution QUADRATIQUE
+// u_exact(x) = x*(L-x)/L^2
+// u'(x)      = (L - 2x)/L^2
+// u''(x)     = -2/L^2
+// f(x)       = -E*u''(x) = 2E/L^2  
+// u(0)       = 0                    Dirichlet
+// sigma(L)   = E*u'(L) = -E/L        Neumann
+// ============================================================
+
+IMPORT "io.edp"
+DEFAULT (length, 1.0)
+DEFAULT (youngModulus, 1000.0)
+DEFAULT (nx, 10)
+
+real L = $length;
+real E = $youngModulus;
+int  N = $nx;
+
+meshL Th = segment(N, [x*L, 0, 0]);
+fespace Vh(Th, P1);
+Vh u, v;
+
+// Functions 
+
+func real fSource() { return 2.0 * E / (L*L); }
+func real uExact()  { return x * (L - x) / (L*L); }
+func real duExact() { return (L - 2.0*x) / (L*L); }
+
+problem MMS1D(u, v) =
+    int1d(Th)(E * dx(u) * dx(v))
+  - int1d(Th)(fSource() * v)
+  - int0d(Th, 2)((-E/L) * v)
+  + on(1, u=0);
+
+MMS1D;
+
+real errNodal = 0.0;
+for (int i = 0; i < Th.nv; i++) {
+    real xi    = Th(i).x;
+    real uexi = xi * (L - xi) / (L*L);
+    real diff  = abs(u(xi, 0, 0) - uexi);
+    errNodal   = max(errNodal, diff);
+}
+
+// L2 error 
+real errL2 = sqrt(int1d(Th)((u - uExact())^2));
+
+// H1 error 
+real errH1 = sqrt(int1d(Th)((dx(u) - duExact())^2));
+
+exportArray(u[]);
+
+real[int] xcoords(Th.nv);
+for (int i = 0; i < Th.nv; i++) xcoords[i] = Th(i).x;
+exportArray(xcoords);
+
+
+real[int] errors(3);
+errors[0] = errNodal;
+errors[1] = errL2;
+errors[2] = errH1;
+exportArray(errors);
