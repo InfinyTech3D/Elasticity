@@ -1,38 +1,29 @@
 """
 Scenario 2: Constant distributed load across the bar
-Double L2 error analysis:
-  - Approach I : L2 evaluated AT nodes : superconvergence (error = machine precision)
-  - Approach II : L2 evaluated at element MIDPOINTS : true O(h^2) convergence
-Both are shown side by side to justify why midpoint evaluation is the correct choice.
+Bar fixed at x=0, constant distributed load q applied along the bar.
+
+The analytical solution is u(x) = (q/(E*A)) * (L*x - x²/2) — a QUADRATIC function of x.
+
 """
-import json
-import os
+
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import Sofa
 import Sofa.Core
 import Sofa.Simulation
 import SofaRuntime
-
-RESULTS_DIR = "results_scenario2"
-
-
-def compute_lame_coefficients(E, nu):
-    lambda_ = E * nu / ((1 + nu) * (1 - 2 * nu))
-    mu      = E / (2 * (1 + nu))
-    E_oed   = lambda_ + 2 * mu
-    return lambda_, mu, E_oed
+import matplotlib.pyplot as plt
+import os
+plt.switch_backend('Agg')
 
 
-def exact_solution_quadratic(x, length, q, E_oed, area=1.0):
-    """u(x) = q / (E_oed * A) * (L*x - x²/2)"""
-    return (q / (E_oed * area)) * (length * x - x**2 / 2.0)
+def exact_solution_quadratic(x, length, q, E, area=1.0):
+    """
+    u(x) = q/(E*A) * (L*x - x²/2)
+    """
+    return (q / (E * area)) * (length * x - x**2 / 2.0)
 
 
-def build_scene_distributed(root, length, q, young_modulus, poisson_ratio, nx):
-
+def build_scene_distributed(root, length, q, young_modulus, nx):
     root.addObject('RequiredPlugin', pluginName=[
         "Elasticity",
         "Sofa.Component.Constraint.Projective",
@@ -41,22 +32,20 @@ def build_scene_distributed(root, length, q, young_modulus, poisson_ratio, nx):
         "Sofa.Component.ODESolver.Backward",
         "Sofa.Component.StateContainer",
         "Sofa.Component.Topology.Container.Dynamic",
-        "Sofa.Component.Visual",
-        "Sofa.GL.Component.Rendering3D",
     ])
     root.addObject('DefaultAnimationLoop')
-    root.addObject('VisualStyle', displayFlags=["showBehaviorModels", "showForceFields"])
 
-    h         = length / (nx - 1)
+    # Maillage uniforme
+    h = length / (nx - 1)
     positions = [[i * h] for i in range(nx)]
-    edges     = [[i, i + 1] for i in range(nx - 1)]
+    edges = [[i, i + 1] for i in range(nx - 1)]
 
     Bar = root.addChild('Bar')
     Bar.addObject('NewtonRaphsonSolver',
                   name="newtonSolver",
-                  printLog=False,
                   maxNbIterationsNewton=10,
-                  absoluteResidualStoppingThreshold=1e-10)
+                  absoluteResidualStoppingThreshold=1e-10,
+                  printLog=False)
     Bar.addObject('SparseLDLSolver',
                   name="linearSolver",
                   template="CompressedRowSparseMatrixd")
@@ -68,248 +57,256 @@ def build_scene_distributed(root, length, q, young_modulus, poisson_ratio, nx):
     dofs_ref = Bar.addObject('MechanicalObject',
                              name="dofs",
                              template="Vec1d",
-                             position=positions,
-                             showObject=True,
-                             showObjectScale=0.02)
+                             position=positions)
 
-    Bar.addObject('EdgeSetTopologyContainer', name="topology", edges=edges)
+    Bar.addObject('EdgeSetTopologyContainer',
+                  name="topology",
+                  edges=edges)
     Bar.addObject('LinearSmallStrainFEMForceField',
                   name="FEM",
                   template="Vec1d",
                   youngModulus=young_modulus,
-                  poissonRatio=poisson_ratio,
+                  poissonRatio=0.3,  
                   topology="@topology")
 
     Bar.addObject('FixedProjectiveConstraint', indices="0")
 
     for i in range(1, nx):
-        nodal_force = q * h / 2.0 if i == nx - 1 else q * h
+        if i == 0:
+            continue
+        elif i == nx - 1:
+            nodal_force = q * h / 2.0  
+        else:
+            nodal_force = q * h      
+        
         Bar.addObject('ConstantForceField',
                       indices=str(i),
-                      forces=str(nodal_force),
-                      showArrowSize=1e-4)
+                      forces=str(nodal_force))
 
     return dofs_ref
 
 
-def run_simulation(length, q, young_modulus, poisson_ratio, nx):
-    root     = Sofa.Core.Node("root")
-    dofs_ref = build_scene_distributed(root, length, q, young_modulus, poisson_ratio, nx)
+def run_simulation(length, q, young_modulus, nx):
+    root = Sofa.Core.Node("root")
+    dofs_ref = build_scene_distributed(root, length, q, young_modulus, nx)
     Sofa.Simulation.init(root)
-    x_initial  = dofs_ref.position.array().copy().flatten()  
+    x_initial = dofs_ref.position.array().copy().flatten()
     Sofa.Simulation.animate(root, root.dt.value)
-    x_final    = dofs_ref.position.array().flatten()
-    u_computed = x_final - x_initial
+    u_computed = dofs_ref.position.array().flatten() - x_initial
     Sofa.Simulation.unload(root)
     return x_initial, u_computed
 
 
-#  ================  Approach I : L2 at NODES ================
-def compute_l2_error_nodal(x_nodes, u_computed, length, q, E_oed):
-    """
-    L2 error evaluated directly at the FEM nodes;
-    In 1D P1 on a uniform mesh with consistent nodal lumping, the FEM
-    solution is EXACT at nodes (superconvergence). The error is therefore
-    at machine precision and does NOT reflect the approximation quality
-    of the P1 interpolation between nodes.
-    """
-    idx  = np.argsort(x_nodes)
-    x_s  = x_nodes[idx]
-    u_s  = u_computed[idx]
-    u_ex = exact_solution_quadratic(x_s, length, q, E_oed)
-    err  = u_s - u_ex
+def compute_l2_error_nodal(x_nodes, u_computed, length, q, E):
+    idx = np.argsort(x_nodes)
+    x_s = x_nodes[idx]
+    u_s = u_computed[idx]
+    u_ex = exact_solution_quadratic(x_s, length, q, E)
+    err = u_s - u_ex
     return np.sqrt(np.trapezoid(err**2, x_s))
 
 
-
-# ===================  Approach II : L2 at element MIDPOINTS ==========================
-def compute_l2_error_midpoints(x_nodes, u_computed, length, q, E_oed):
-    """
-    L2 error evaluated at element midpoints.
-
-    The P1 interpolation is linear inside each element; the exact solution
-    is quadratic;
-
-    """
-    idx      = np.argsort(x_nodes)
-    x_s      = x_nodes[idx]
-    u_s      = u_computed[idx]
+def compute_l2_error_midpoints(x_nodes, u_computed, length, q, E):
+    idx = np.argsort(x_nodes)
+    x_s = x_nodes[idx]
+    u_s = u_computed[idx]
     l2_error = 0.0
+    
     for i in range(len(x_s) - 1):
-        x_mid    = (x_s[i] + x_s[i+1]) / 2.0
-        u_interp = (u_s[i] + u_s[i+1]) / 2.0   # linear inter
-        u_ex     = exact_solution_quadratic(np.array([x_mid]), length, q, E_oed)[0]
-        dx       = x_s[i+1] - x_s[i]
+        x_mid = (x_s[i] + x_s[i+1]) / 2.0
+        u_interp = (u_s[i] + u_s[i+1]) / 2.0  
+        u_ex = exact_solution_quadratic(np.array([x_mid]), length, q, E)[0]
+        dx = x_s[i+1] - x_s[i]
         l2_error += (u_interp - u_ex)**2 * dx
+    
     return np.sqrt(l2_error)
 
 
-# ================= Convergence study ===================
-def run_convergence_study():
-
-    length        = 10.0
-    q             = 100.0
-    young_modulus = 1e6
-    poisson_ratio = 0.3
-    mesh_sizes    = [2, 4, 8, 16, 32, 64]
-
-    _, _, E_oed = compute_lame_coefficients(young_modulus, poisson_ratio)
+def simulation_distributed(length, q, E, nx):
+   
     
+    x, u_sofa = run_simulation(length, q, E, nx)
+    u_exact = exact_solution_quadratic(x, length, q, E)
+    
+    with open('resultats_scenario2.txt', 'w') as f:
+        f.write(f"Longueur L = {length} \n")
+        f.write(f"Charge répartie q = {q} \n")
+        f.write(f"Module d'Young E = {E} \n")
+        f.write(f"Nombre de nœuds nx = {nx}\n")
+        f.write(f"Nombre d'éléments = {nx-1}\n")
+        f.write(f"{'Position x (m)':>15} | {'u_SOFA (m)':>15} | {'u_exact (m)':>15} | {'Erreur (m)':>15}\n")
 
-    l2_nodal      = []
-    l2_midpoints  = []
-    element_sizes = []
+        
+        print(f"{'x (m)':>10} | {'u_SOFA (m)':>15} | {'u_exact (m)':>15} | {'Erreur (m)':>15}")
+        
+        for xi, us, ue in zip(x, u_sofa, u_exact):
+            erreur = abs(us - ue)
+            f.write(f"{xi:15.4f} | {us:15.6e} | {ue:15.6e} | {erreur:15.6e}\n")
+            print(f"{xi:10.4f} | {us:15.6e} | {ue:15.6e} | {erreur:15.6e}")
+    
+    # Erreurs L2
+    err_nodal = compute_l2_error_nodal(x, u_sofa, length, q, E)
+    err_mid = compute_l2_error_midpoints(x, u_sofa, length, q, E)
+    
+    with open('resultats_scenario2.txt', 'a') as f:
 
-    fig, axes = plt.subplots(1, 3, figsize=(17, 5))
-
-    for nx in mesh_sizes:
-        h = length / (nx - 1)
-        x_initial, u_computed = run_simulation(length, q, young_modulus, poisson_ratio, nx)
-
-        err_nod = compute_l2_error_nodal(    x_initial, u_computed, length, q, E_oed)
-        err_mid = compute_l2_error_midpoints(x_initial, u_computed, length, q, E_oed)
-
-        l2_nodal.append(err_nod)
-        l2_midpoints.append(err_mid)
-        element_sizes.append(h)
-
-        print(f"{nx:>6}  {h:>10.4f}  {err_nod:>16.6e}  {err_mid:>18.6e}")
-
-        if nx in [2, 4, 8, 16, 32]:
-            axes[0].plot(x_initial, u_computed, 'o-',
-                         label=f'{nx-1} elements', markersize=4)
-
-    # ── Plot 1 : displacement ========================
-    x_fine = np.linspace(0, length, 300)
-    u_fine = exact_solution_quadratic(x_fine, length, q, E_oed)
-    axes[0].plot(x_fine, u_fine, 'k-', linewidth=2, label='Exact')
-    axes[0].set_xlabel('x (m)')
-    axes[0].set_ylabel('u(x) (m)')
-    axes[0].set_title('Displacement : constant distributed load')
-    axes[0].legend(fontsize=8)
-    axes[0].grid(True)
-
-    #  =========== Plot 2 : convergence comparison ===================
-    h_arr = np.array(element_sizes)
-    h_ref = np.array([h_arr[0], h_arr[-1]])
-
-    axes[1].loglog(h_arr, l2_nodal,    'rs--', linewidth=2, markersize=7,
-                   label='Approach I : at nodes\n(superconvergence)')
-    axes[1].loglog(h_arr, l2_midpoints,'bo-',  linewidth=2, markersize=7,
-                   label='Approach II — at midpoints\n(true interpolation error)')
-    err_ref2 = l2_midpoints[0] * (h_ref / h_arr[0])**2
-    axes[1].loglog(h_ref, err_ref2, 'k--', linewidth=1.5, label='O(h^2) reference')
-    axes[1].set_xlabel("Element size h ")
-    axes[1].set_ylabel("L2 error")
-    axes[1].set_title("Convergence — Approach I vs Approach II")
-    axes[1].legend(fontsize=7.5)
-    axes[1].grid(True, which='both')
-
-    nx_demo = 4
-    h_demo  = length / (nx_demo - 1)
-    u_left  = exact_solution_quadratic(np.array([0.0]),    length, q, E_oed)[0]
-    u_right = exact_solution_quadratic(np.array([h_demo]), length, q, E_oed)[0]
-    x_elem  = np.linspace(0, h_demo, 200)
-    u_p1    = u_left + (u_right - u_left) * x_elem / h_demo
-    u_ex_el = exact_solution_quadratic(x_elem, length, q, E_oed)
-
-    axes[2].plot(x_elem, u_ex_el * 1e3, 'k-',  linewidth=2, label='Exact (quadratic)')
-    axes[2].plot(x_elem, u_p1    * 1e3, 'b--', linewidth=2, label='P1 interpolation')
-    axes[2].plot([0.0, h_demo],
-                 [u_left*1e3, u_right*1e3], 'go', markersize=8,
-                 label='FEM nodes : exact == superconv')
-
-    x_mid    = h_demo / 2
-    u_p1_mid = (u_left + u_right) / 2
-    u_ex_mid = exact_solution_quadratic(np.array([x_mid]), length, q, E_oed)[0]
-    axes[2].annotate('', xy=(x_mid, u_ex_mid*1e3), xytext=(x_mid, u_p1_mid*1e3),
-                     arrowprops=dict(arrowstyle='<->', color='red', lw=1.5))
-    axes[2].text(x_mid + h_demo*0.04,
-                 (u_p1_mid + u_ex_mid) / 2 * 1e3,
-                 f'max error\n≈ h²/8·u\'\'\n= {abs(u_ex_mid-u_p1_mid)*1e3:.4f}×10⁻³ m',
-                 color='red', fontsize=7.5)
-    axes[2].axvline(x_mid, color='red', linestyle=':', linewidth=1, alpha=0.5)
-    axes[2].set_xlabel('x (m)')
-    axes[2].set_ylabel('u(x) (×10⁻³ m)')
-    axes[2].set_title(' midpoints\nMax P1 interpolation error on element 1')
-    axes[2].legend(fontsize=7.5)
-    axes[2].grid(True)
-
-    # ===============  Convergence rates ========================
-    for i in range(len(l2_midpoints) - 1):
-        rate = (np.log(l2_midpoints[i+1]) - np.log(l2_midpoints[i])) / \
-               (np.log(element_sizes[i+1]) - np.log(element_sizes[i]))
-        print(f"  h: {element_sizes[i]:.4f} -> {element_sizes[i+1]:.4f},  rate: {rate:.2f}")
-
-    for i in range(len(l2_nodal) - 1):
-        if l2_nodal[i] > 1e-30 and l2_nodal[i+1] > 1e-30:
-            rate = (np.log(l2_nodal[i+1]) - np.log(l2_nodal[i])) / \
-                   (np.log(element_sizes[i+1]) - np.log(element_sizes[i]))
-            print(f"  h: {element_sizes[i]:.4f} -> {element_sizes[i+1]:.4f},  "
-                  f"rate: {rate:.2f}  (values at machine precision)")
-        else:
-            print(f"  h: {element_sizes[i]:.4f} -> {element_sizes[i+1]:.4f},  "
-                  f"rate: N/A  (error = 0, exact superconvergence)")
-
-    os.makedirs(RESULTS_DIR, exist_ok=True)
+        f.write(f"Erreur L2 (aux nœuds)     = {err_nodal:.6e} (superconvergence)\n")
+        f.write(f"Erreur L2 (aux milieux)   = {err_mid:.6e} (vraie erreur d'interpolation)\n")
+    
+    print(f"Erreur L2 (aux nœuds)     = {err_nodal:.6e} (superconvergence)")
+    print(f"Erreur L2 (aux milieux)   = {err_mid:.6e} (vraie erreur d'interpolation)")
+    
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(x, u_sofa, 'bo-', label='Simulation SOFA', markersize=6, linewidth=2)
+    
+    
+    x_fine = np.linspace(0, length, 200)
+    u_fine = exact_solution_quadratic(x_fine, length, q, E)
+    plt.plot(x_fine, u_fine, 'r--', label='Solution exacte (quadratique)', linewidth=2)
+    
+    plt.xlabel('Position x ', fontsize=12)
+    plt.ylabel('Déplacement u(x) ', fontsize=12)
+    plt.title(f'Charge répartie constante - Barre en traction\nq={q} N/m, E={E} Pa, L={length} m, nx={nx}', fontsize=14)
+    plt.legend(fontsize=10)
+    plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(os.path.join(RESULTS_DIR, "convergence_analysis.png"), dpi=150)
-    print(f"\nFigure saved : {RESULTS_DIR}/convergence_analysis.png")
+    plt.savefig('deplacement_scenario2.png', dpi=300, bbox_inches='tight')
+    
+    return x, u_sofa, u_exact
 
-    with open(os.path.join(RESULTS_DIR, "convergence_results.txt"), 'w') as f:
-        json.dump({
-            "element_sizes": element_sizes,
-            "l2_nodal":      l2_nodal,
-            "l2_midpoints":  l2_midpoints,
-        }, f, indent=2)
 
+def convergence_study_distributed(length, q, E, nx_values):
+    
+    print(f"{'nx':>6} | {'h (m)':>10} | {'Erreur L2 (nœuds)':>20} | {'Erreur L2 (milieux)':>22} | {'Taux O(h)':>10}")
+
+    
+    l2_nodal = []
+    l2_midpoints = []
+    element_sizes = []
+    
+    with open('convergence_scenario2.txt', 'w') as f:
+        f.write(f"{'nx':>6} | {'h (m)':>10} | {'Erreur L2 (nœuds)':>20} | {'Erreur L2 (milieux)':>22} | {'Taux O(h)':>10}\n")
+    
+        for i, nx in enumerate(nx_values):
+            h = length / (nx - 1)
+            x, u_sofa = run_simulation(length, q, E, nx)
+            
+            err_nodal = compute_l2_error_nodal(x, u_sofa, length, q, E)
+            err_mid = compute_l2_error_midpoints(x, u_sofa, length, q, E)
+            
+            l2_nodal.append(err_nodal)
+            l2_midpoints.append(err_mid)
+            element_sizes.append(h)
+            
+            rate_str = ""
+            if i > 0:
+                rate = np.log(err_mid / l2_midpoints[i-1]) / np.log(h / element_sizes[i-1])
+                rate_str = f"{rate:.2f}"
+            
+            print(f"{nx:6d} | {h:10.4f} | {err_nodal:20.6e} | {err_mid:22.6e} | {rate_str:>10}")
+            f.write(f"{nx:6d} | {h:10.4f} | {err_nodal:20.6e} | {err_mid:22.6e} | {rate_str:>10}\n")
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    
+    
+    axes[0].loglog(element_sizes, l2_nodal, 'rs--', linewidth=2, markersize=8,
+                   label='Erreur L2 aux nœuds (superconvergence)')
+    axes[0].loglog(element_sizes, l2_midpoints, 'bo-', linewidth=2, markersize=8,
+                   label='Erreur L2 aux milieux (vraie erreur)')
+    
+    h_ref = np.array([element_sizes[0], element_sizes[-1]])
+    err_ref = l2_midpoints[0] * (h_ref / element_sizes[0])**2
+    axes[0].loglog(h_ref, err_ref, 'k--', linewidth=1.5, label='Référence O(h²)')
+    
+    axes[0].set_xlabel('Taille d\'élément h ', fontsize=12)
+    axes[0].set_ylabel('Erreur L2', fontsize=12)
+    axes[0].set_title('Convergence de l\'erreur L2', fontsize=14)
+    axes[0].legend(fontsize=10)
+    axes[0].grid(True, alpha=0.3, which='both')
+    
+    nx_demo = 4
+    h_demo = length / (nx_demo - 1)
+    x_demo, u_demo = run_simulation(length, q, E, nx_demo)
+    
+    x_elem = np.linspace(0, h_demo, 200)
+    u_ex_elem = exact_solution_quadratic(x_elem, length, q, E)
+    u_left = u_demo[0]
+    u_right = u_demo[1]
+    u_p1 = u_left + (u_right - u_left) * x_elem / h_demo
+    
+    axes[1].plot(x_elem, u_ex_elem * 1e3, 'k-', linewidth=2, label='Solution exacte (quadratique)')
+    axes[1].plot(x_elem, u_p1 * 1e3, 'b--', linewidth=2, label='Interpolation P1')
+    axes[1].plot([0, h_demo], [u_left*1e3, u_right*1e3], 'go', markersize=8, label='Nœuds FEM (exacts)')
+    
+    x_mid = h_demo / 2
+    u_p1_mid = (u_left + u_right) / 2
+    u_ex_mid = exact_solution_quadratic(np.array([x_mid]), length, q, E)[0]
+    
+    axes[1].annotate('', xy=(x_mid, u_ex_mid*1e3), xytext=(x_mid, u_p1_mid*1e3),
+                     arrowprops=dict(arrowstyle='<->', color='red', lw=2))
+    axes[1].text(x_mid + h_demo*0.05, (u_p1_mid + u_ex_mid)/2 * 1e3,
+                 f'Erreur max ≈ h²/8·u\'\'\n= {abs(u_ex_mid-u_p1_mid)*1e3:.4e} m',
+                 color='red', fontsize=8)
+    axes[1].axvline(x_mid, color='red', linestyle=':', linewidth=1, alpha=0.5)
+    
+    axes[1].set_xlabel('x (m)', fontsize=12)
+    axes[1].set_ylabel('u(x) (×10⁻³ m)', fontsize=12)
+    axes[1].set_title('Erreur d\'interpolation P1 au milieu de l\'élément', fontsize=14)
+    axes[1].legend(fontsize=9)
+    axes[1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('convergence_scenario2.png', dpi=300, bbox_inches='tight')
+    
     return element_sizes, l2_nodal, l2_midpoints
 
 
-def test_nodal_superconvergence():
+def main():
 
-    length        = 10.0
-    q             = 100.0
-    young_modulus = 1e6
-    poisson_ratio = 0.3
-    _, _, E_oed   = compute_lame_coefficients(young_modulus, poisson_ratio)
-
-
-    for nx in [5, 33]:
-        print(f"Mesh with {nx-1} elements:")
-        x_initial, u_computed = run_simulation(length, q, young_modulus, poisson_ratio, nx)
-        u_exact = exact_solution_quadratic(x_initial, length, q, E_oed)
-
-        print(f"  {'x':>10}  {'u_SOFA':>12}  {'u_exact':>12}  {'Error':>12}")
-        max_err = 0.0
-        for xi, uc, ue in zip(x_initial, u_computed, u_exact):
-            err     = abs(uc - ue)
-            max_err = max(max_err, err)
-            print(f"  {xi:10.4f}  {uc:12.6e}  {ue:12.6e}  {err:12.6e}")
+    length = 10.0
+    q = 100.0  
+    E = 1e6    
+    nx = 5     
+    
+    x, u_sofa, u_exact = simulation_distributed(length, q, E, nx)
+    
+    nx_values = [2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 32, 64]
+    convergence_study_distributed(length, q, E, nx_values)
+    
 
 
 
 def createScene(rootNode):
-
+    """Entry point for runSofa GUI."""
     build_scene_distributed(rootNode,
                             length=10.0, q=100.0,
-                            young_modulus=1e6, poisson_ratio=0.3,
+                            young_modulus=1e6,
                             nx=8)
     return rootNode
 
 
 if __name__ == "__main__":
-    element_sizes, l2_nodal, l2_midpoints = run_convergence_study()
-    test_nodal_superconvergence()
+    main()
 
 
 
 
 
-""""
-remark : 
-“The nodal displacements are exact up to machine precision for any mesh—this is nodal superconvergence in 1D P1 on a uniform mesh,
- a theoretically known result. To observe the expected convergence, I evaluate the L2 norm at the midpoints of the elements, 
- where the P1 interpolation deviates from the quadratic solution. This yields a convergence rate of 2.00 for all refinement levels, 
- consistent with the theoretical O(h^2) rate for P1 with an H^2 solution.”
+
+
+"""""
+For a 1D bar with constant distributed load, the exact displacement is quadratic, 
+while the FEM uses linear (P1) interpolation inside each element. 
+At the nodes, both solutions coincide exactly due to superconvergence. 
+However, between the nodes, the linear approximation deviates from the true quadratic solution.
+
+
+The nodal displacements are exact up to machine precision for any mesh—this is nodal superconvergence 
+in 1D P1 on a uniform mesh, a theoretically known result. 
+To observe the expected convergence, we evaluate the L2 norm at the midpoints of the elements,
+ where the P1 interpolation deviates from the quadratic solution. 
+ This yields a convergence rate of 2.00 for all refinement levels, 
+ consistent with the theoretical O(h^2) rate for P1 with an H^2 solution."
+
 """
