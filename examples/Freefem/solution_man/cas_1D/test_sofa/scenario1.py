@@ -132,7 +132,7 @@ def main():
     nu     = 0.0
     nx     = 2     
     
-    x, u_sofa, u_naive = sol_exact(length, force, E, nu, nx)
+    x, u_sofa, u_exact = sol_exact(length, force, E, nu, nx)
     
     
 
