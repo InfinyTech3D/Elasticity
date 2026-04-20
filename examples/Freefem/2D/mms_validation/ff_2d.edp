@@ -1,0 +1,62 @@
+load "iovtk"
+
+real E  = 1e6;
+real nu = 0.3;
+real A  = 1e-4;
+
+real C11 = E / (1.0 - nu^2);
+real C12 = E * nu / (1.0 - nu^2);
+real C33 = E / (2.0 * (1.0 + nu));
+
+func real uxex() { return  A * sin(pi*x) * cos(pi*y); }
+func real uyex() { return -A * cos(pi*x) * sin(pi*y); }
+
+func real fx() {
+    return A * pi^2 * sin(pi*x) * cos(pi*y) * (C11 - C12);
+}
+func real fy() {
+    return -A * pi^2 * cos(pi*x) * sin(pi*y) * (C11 - C12);
+}
+
+int[int] grids = [4, 8, 16, 32, 64];
+
+for (int k = 0; k < grids.n; k++) {
+    int nx = grids[k];
+    mesh Th = square(nx, nx);
+
+    fespace Vh(Th, P1);
+    Vh ux, uy, vx, vy;
+
+    
+    problem Elasticity([ux, uy], [vx, vy], solver=LU) =
+        int2d(Th)(
+            C11 * dx(ux)*dx(vx)
+          + C11 * dy(uy)*dy(vy)
+          + C12 * dy(uy)*dx(vx)
+          + C12 * dx(ux)*dy(vy)
+          + C33 * (dy(ux)+dx(uy)) * (dy(vx)+dx(vy))
+        )
+        - int2d(Th)(
+            fx()*vx + fy()*vy
+        )
+
+        + on(1, 2, 3, 4, ux=uxex(), uy=uyex());
+
+    Elasticity;
+
+    Vh ex = ux - uxex();
+    Vh ey = uy - uyex();
+
+    real errL2 = sqrt(int2d(Th)(ex^2 + ey^2));
+    real errH1 = sqrt(int2d(Th)(
+        dx(ex)^2 + dy(ex)^2 + dx(ey)^2 + dy(ey)^2
+    ));
+    real normL2 = sqrt(int2d(Th)(uxex()^2 + uyex()^2));
+
+    cout << "nx=" << nx
+         << "  h=" << 1.0/nx
+         << "  L2=" << errL2
+         << "  L2_rel=" << errL2/normL2
+         << "  H1=" << errH1
+         << endl;
+}
