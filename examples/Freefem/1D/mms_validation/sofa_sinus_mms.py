@@ -3,20 +3,12 @@ Sinusoidal :  MMS u(x) = sin(pi * x)
 Equilibre : E*u'' + f = 0  =>  f(x) = E * pi^2 * sin(pi * x)
 BC: u(0) = 0 (Dirichlet),  E*u'(L) = E*pi*cos(pi*L) (Neumann)
 
-remarks
-This code computes the deformation of a bar subjected to a force that varies
-as sin(pi*x). To be precise:
+This code computes the deformation of a bar subjected to a force that varies as sin(pi*x).
 
- 2 Gauss points per element are used to compute the force (Gauss quadrature)
- At least 8 nodes along the entire bar are needed to properly capture the
-  5 oscillations of the sinusoidal force
- The solver is allowed 15 iterations to find the solution
+Note: The nodal force values passed to the ConstantForceField are computed using a 2-point Gauss quadrature because f(x) is not constant within the element. 
 
-CORRECTION: compute_h1_error now evaluates the gradient error at the 2 Gauss
-points of each element (instead of the midpoint only), which correctly recovers
-the theoretical O(h^1) convergence rate for the H1 semi-norm with P1 elements.
-The midpoint of a P1 element is a superconvergence point for the gradient,
-so evaluating only there artificially gives O(h^2) for H1 — which is wrong.
+The H1 error must be evaluated using 2 Gauss points to correctly recover the theoretical O(h^1) convergence rate for the H1 semi-norm with P1 elements. 
+The midpoint of a P1 element is a superconvergence point for the gradient, so evaluating only there artificially gives O(h^2) for H1.
 """
 
 import numpy as np
