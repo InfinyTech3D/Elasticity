@@ -51,7 +51,7 @@ def build_scene(root, length, young_modulus, nx):
     Bar = root.addChild('Bar')
     Bar.addObject('NewtonRaphsonSolver',
                   name="newtonSolver",
-                  maxNbIterationsNewton=10,
+                  maxNbIterationsNewton=1,
                   absoluteResidualStoppingThreshold=1e-10,
                   printLog=False)
     Bar.addObject('SparseLDLSolver',
@@ -77,13 +77,15 @@ def build_scene(root, length, young_modulus, nx):
 
     Bar.addObject('FixedProjectiveConstraint', indices="0")
 
-    # Forces volumiques nodales
-    # F_i = f(x_i)*h  
-    # F_0 = f(x_0)*h/2  (nœud de Dirichlet )
-    # F_{N-1} = f(x_{N-1})*h/2  (nœud de Neumann)
+
+
+    # CORRIGÉ (forces consistantes exactes aux bords)
     nodal_forces = [f_body(i * h, young_modulus, length) * h for i in range(nx)]
-    nodal_forces[0]      *= 0.5   
-    nodal_forces[nx - 1] *= 0.5  
+# Correction superconvergence 
+# Bord gauche : h/6 * [2*f(x_0) + f(x_1)]
+    nodal_forces[0]      = (h / 6.0) * (2*f_body(0,young_modulus, length) + f_body(h,young_modulus, length))
+# Bord droit  : h/6 * [f(x_{N-2}) + 2*f(x_{N-1})]
+    nodal_forces[nx - 1] = (h / 6.0) * (f_body((nx-2)*h, young_modulus, length) + 2*f_body((nx-1)*h, young_modulus, length))  
 
     all_indices = " ".join(str(i)   for i in range(nx))
     all_forces  = " ".join(f"{fi}"  for fi in nodal_forces)
@@ -223,7 +225,7 @@ def convergence_study(length, young_modulus, nx_values):
 
 
     nx_demo  = 4
-    h_demo   = length / (nx_demo - 1)
+    h_demo   = length / (nx - 1)
     x_d, u_d = run_simulation(length, young_modulus, nx_demo)
     x_e      = np.linspace(0, h_demo, 200)
     u_ex_e   = u_mms(x_e, length)
