@@ -188,5 +188,5 @@ $$
 With a 2-point quadrature rule:
 
 $$
-F_0 = \frac{h}{2} f(x_0), \quad F_i = h\, f(x_i), \quad F_N = \frac{h}{2} f(x_N)
+F_0 = \frac{h}{6}\left[2f(x_0) + f(x_1)\right], \quad F_i = h\, f(x_i), \quad F_N = \frac{h}{6}\left[f(x_{N-1}) + 2f(x_N)\right]
 $$
