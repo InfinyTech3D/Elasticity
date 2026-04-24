@@ -96,7 +96,7 @@ def compute_nodal_forces(nodes_2d, L, E, nx, ny):
 
 
 def createScene(rootNode, L=1.0, E=1e6, nx=10, ny=10, with_visual=True):
-    rootNode.addObject('RequiredPlugin',name='Sofa.component.Visual')
+    rootNode.addObject('RequiredPlugin',pluginName='Sofa.Component.Visual')
     rootNode.addObject('RequiredPlugin',  pluginName=[                       
 
         "Elasticity",
@@ -122,6 +122,11 @@ def createScene(rootNode, L=1.0, E=1e6, nx=10, ny=10, with_visual=True):
     Beam.addObject('StaticSolver',
                    name="staticSolver",
                    printLog=False)
+    Beam.addObject('NewtonRaphsonSolver',
+                  name="newtonSolver",
+                  maxNbIterationsNewton=1,
+                  absoluteResidualStoppingThreshold=1e-10,
+                  printLog=False)
     Beam.addObject('SparseLDLSolver',
                    name="linearSolver",
                    template="CompressedRowSparseMatrixd")
