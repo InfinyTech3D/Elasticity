@@ -17,6 +17,7 @@ from mms_utils import (
     build_bar_scene,
     run_bar_mms,
     l2_error,
+    h1_semi_error,
     write_solution_table,
     plot_solution,
     convergence_study,
@@ -27,6 +28,10 @@ CASE_NAME = "cubic"
 
 def u_ex(xi, L):
     return L * xi**2 * (1.0 - xi)
+
+
+def du_ex(xi, L):
+    return L * (2.0 * xi - 3.0 * xi**2)
 
 
 def f_body(xi, E):
@@ -67,16 +72,19 @@ if __name__ == "__main__":
     nx      = cfg["nx"]
     nx_list = cfg["nxConvergence"][CASE_NAME]
 
-    u_exact = lambda xi: u_ex(xi, L)
+    u_exact  = lambda xi: u_ex(xi, L)
+    du_exact = lambda xi: du_ex(xi, L)
 
     # Single solution
     x0, u_h = _run(L, E, nx)
-    err      = l2_error(x0, u_h, u_exact, gauss2_quadrature)
-    write_solution_table(CASE_NAME, x0, u_h, u_exact, {"L2": err})
+    l2  = l2_error(x0, u_h, u_exact, gauss2_quadrature)
+    h1  = h1_semi_error(x0, u_h, du_exact, gauss2_quadrature)
+    write_solution_table(CASE_NAME, x0, u_h, u_exact, {"L2": l2, "H1_semi": h1})
     plot_solution(CASE_NAME, x0, u_h, u_exact, r"$Lx^2(1-x)$")
 
     # Convergence study
     convergence_study(CASE_NAME, nx_list,
         run_fn     = lambda nx: _run(L, E, nx),
-        error_fns  = {"L2": lambda x, u: l2_error(x, u, u_exact, gauss2_quadrature)},
-        ref_slopes = {r"O(h$^2$)": ("L2", 2)})
+        error_fns  = {"L2":      lambda x, u: l2_error(x, u, u_exact, gauss2_quadrature),
+                      "H1_semi": lambda x, u: h1_semi_error(x, u, du_exact, gauss2_quadrature)},
+        ref_slopes = {r"O(h$^2$)": ("L2", 2), r"O(h$^1$)": ("H1_semi", 1)})

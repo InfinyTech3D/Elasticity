@@ -13,10 +13,12 @@ import numpy as np
 from mms_utils import (
     load_params,
     midpoint_quadrature,
+    gauss2_quadrature,
     assemble_nodal_forces,
     build_bar_scene,
     run_bar_mms,
     l2_error,
+    h1_semi_error,
     write_solution_table,
     plot_solution,
     convergence_study,
@@ -27,6 +29,10 @@ CASE_NAME = "quadratic"
 
 def u_ex(xi):
     return xi * (1.0 - xi)
+
+
+def du_ex(xi):
+    return 1.0 - 2.0 * xi
 
 
 def f_body(xi, E_eff):
@@ -69,12 +75,14 @@ if __name__ == "__main__":
 
     # Single solution
     x0, u_h = _run(L, E, nx)
-    err      = l2_error(x0, u_h, u_ex, midpoint_quadrature)
-    write_solution_table(CASE_NAME, x0, u_h, u_ex, {"L2": err})
+    l2  = l2_error(x0, u_h, u_ex, midpoint_quadrature)
+    h1  = h1_semi_error(x0, u_h, du_ex, gauss2_quadrature)
+    write_solution_table(CASE_NAME, x0, u_h, u_ex, {"L2": l2, "H1_semi": h1})
     plot_solution(CASE_NAME, x0, u_h, u_ex, r"$x(1-x)$")
 
     # Convergence study
     convergence_study(CASE_NAME, nx_list,
         run_fn     = lambda nx: _run(L, E, nx),
-        error_fns  = {"L2": lambda x, u: l2_error(x, u, u_ex, midpoint_quadrature)},
-        ref_slopes = {r"O(h$^2$)": ("L2", 2)})
+        error_fns  = {"L2":      lambda x, u: l2_error(x, u, u_ex, midpoint_quadrature),
+                      "H1_semi": lambda x, u: h1_semi_error(x, u, du_ex, gauss2_quadrature)},
+        ref_slopes = {r"O(h$^2$)": ("L2", 2), r"O(h$^1$)": ("H1_semi", 1)})
