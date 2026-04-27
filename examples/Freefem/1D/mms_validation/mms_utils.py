@@ -96,18 +96,16 @@ def h1_semi_error(nodes, u_h, du_ex, quadrature):
 # SOFA runner
 # ---------------------------------------------------------------------------
 
-def run_bar_mms(length, young_modulus, poisson_ratio, nx, nodal_forces, apply_bcs):
+def build_bar_scene(root, length, young_modulus, poisson_ratio, nx, nodal_forces, apply_bcs):
     """
-    Build and run a static 1D bar simulation.
+    Populate root with a static 1D bar scene.
 
     nodal_forces : array of length nx, assembled body force vector
     apply_bcs    : callable(Bar, nx) that adds all boundary conditions
                    (FixedProjectiveConstraint + Neumann ConstantForceField)
 
-    Returns (node_positions, displacements).
+    Returns the dofs MechanicalObject.
     """
-    root = Sofa.Core.Node("root")
-
     root.addObject('RequiredPlugin', pluginName=[
         "Elasticity",
         "Sofa.Component.Constraint.Projective",
@@ -156,6 +154,14 @@ def run_bar_mms(length, young_modulus, poisson_ratio, nx, nodal_forces, apply_bc
 
     apply_bcs(Bar, nx)
 
+    return dofs
+
+
+def run_bar_mms(length, young_modulus, poisson_ratio, nx, nodal_forces, apply_bcs):
+    """Build, run one static step, and return (node_positions, displacements)."""
+    root = Sofa.Core.Node("root")
+    dofs = build_bar_scene(root, length, young_modulus, poisson_ratio,
+                           nx, nodal_forces, apply_bcs)
     Sofa.Simulation.init(root)
     x0 = dofs.position.array().copy().flatten()
     Sofa.Simulation.animate(root, root.dt.value)
