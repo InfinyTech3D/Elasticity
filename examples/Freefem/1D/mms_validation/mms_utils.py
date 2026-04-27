@@ -1,10 +1,14 @@
 """Shared utilities for 1D MMS validation."""
 
 import json
+import os
 import numpy as np
+import matplotlib.pyplot as plt
 import Sofa
 import Sofa.Core
 import Sofa.Simulation
+
+RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
 
 # ---------------------------------------------------------------------------
@@ -158,3 +162,97 @@ def run_bar_mms(length, young_modulus, poisson_ratio, nx, nodal_forces, apply_bc
     u  = dofs.position.array().flatten() - x0
     Sofa.Simulation.unload(root)
     return x0, u
+
+
+# ---------------------------------------------------------------------------
+# Output helpers
+# ---------------------------------------------------------------------------
+
+def write_solution_table(case, x, u_h, u_ex, error_dict):
+    """
+    Write per-node solution table and error summary to results/<case>_solution.txt.
+
+    u_ex : callable x -> float
+    error_dict : ordered dict of {label: value} for error summary lines
+    """
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    path = os.path.join(RESULTS_DIR, f"{case}_solution.txt")
+    with open(path, "w") as f:
+        f.write(f"{'x':>10} | {'u_h':>15} | {'u_ex':>15} | {'error':>15}\n")
+        f.write("-" * 60 + "\n")
+        for xi, ui in zip(x, u_h):
+            ue  = u_ex(xi)
+            f.write(f"{xi:10.4f} | {ui:15.6e} | {ue:15.6e} | {abs(ui - ue):15.6e}\n")
+        f.write("\n")
+        for label, val in error_dict.items():
+            f.write(f"{label:12s} = {val:.6e}\n")
+
+
+def write_convergence_table(case, rows):
+    """
+    Write convergence table to results/<case>_convergence.txt.
+
+    rows : list of dicts with keys 'nx', 'h', and one key per error column.
+           Rate columns are strings (empty for the first row).
+    """
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    path = os.path.join(RESULTS_DIR, f"{case}_convergence.txt")
+    err_keys = [k for k in rows[0] if k not in ("nx", "h")]
+    header   = f"{'nx':>6} | {'h':>10}" + "".join(f" | {k:>16}" for k in err_keys)
+    with open(path, "w") as f:
+        f.write(header + "\n")
+        f.write("-" * len(header) + "\n")
+        for row in rows:
+            line = f"{row['nx']:6d} | {row['h']:10.4f}"
+            for k in err_keys:
+                v = row[k]
+                line += f" | {v:16.6e}" if isinstance(v, float) else f" | {v:>16}"
+            f.write(line + "\n")
+
+
+def plot_solution(case, x, u_h, u_ex, label_ex):
+    """Save solution comparison plot to results/<case>_solution.png.
+
+    u_ex : callable x -> float
+    """
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    x_fine = np.linspace(x[0], x[-1], 300)
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.plot(x,      u_h,        "bo-", label="SOFA",   markersize=6, linewidth=2)
+    ax.plot(x_fine, u_ex(x_fine), "r--", label=label_ex, linewidth=2)
+    ax.set_xlabel("x")
+    ax.set_ylabel("u(x)")
+    ax.set_title(f"MMS {case}: SOFA vs exact")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(RESULTS_DIR, f"{case}_solution.png"), dpi=150)
+    plt.close(fig)
+
+
+def plot_convergence(case, hs, error_series, reference_slopes):
+    """
+    Save log-log convergence plot to results/<case>_convergence.png.
+
+    error_series    : dict { label: array-like of errors }
+    reference_slopes: dict { label: (errors_ref, slope) }
+    """
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    h_arr   = np.array(hs)
+    h_ref   = np.array([h_arr[0], h_arr[-1]])
+    markers = ["bo-", "rs--", "g^:"]
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for (label, errors), marker in zip(error_series.items(), markers):
+        ax.loglog(h_arr, errors, marker, label=label, linewidth=2, markersize=7)
+    for label, (ref_errors, slope) in reference_slopes.items():
+        scale = np.array(ref_errors)[0] * (h_ref[0] / h_arr[0]) ** slope
+        ax.loglog(h_ref, scale * (h_ref / h_ref[0]) ** slope,
+                  "k--", linewidth=1.5, label=label)
+    ax.set_xlabel("h")
+    ax.set_ylabel("Error")
+    ax.set_title(f"Convergence — {case}")
+    ax.legend()
+    ax.grid(True, alpha=0.3, which="both")
+    fig.tight_layout()
+    fig.savefig(os.path.join(RESULTS_DIR, f"{case}_convergence.png"), dpi=150)
+    plt.close(fig)
