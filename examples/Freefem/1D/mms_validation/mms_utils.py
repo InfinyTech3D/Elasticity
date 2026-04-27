@@ -45,3 +45,19 @@ def assemble_nodal_forces(f_body, nodes, quadrature):
         forces[i]     += quadrature(lambda x, x1=x1, x2=x2, h=h: f_body(x) * (x2 - x) / h, x1, x2)
         forces[i + 1] += quadrature(lambda x, x1=x1, x2=x2, h=h: f_body(x) * (x - x1) / h, x1, x2)
     return forces
+
+
+# ---------------------------------------------------------------------------
+# Error norms
+# ---------------------------------------------------------------------------
+
+def l2_error(nodes, u_h, u_ex, quadrature):
+    """L2 error norm: sqrt( integral (u_h - u_ex)^2 dx ) over the mesh."""
+    total = 0.0
+    for i in range(len(nodes) - 1):
+        x1, x2 = nodes[i], nodes[i + 1]
+        h = x2 - x1
+        u_a, u_b = u_h[i], u_h[i + 1]
+        u_interp = lambda x, x1=x1, h=h, u_a=u_a, u_b=u_b: u_a + (u_b - u_a) * (x - x1) / h
+        total += quadrature(lambda x: (u_interp(x) - u_ex(x)) ** 2, x1, x2)
+    return np.sqrt(total)
