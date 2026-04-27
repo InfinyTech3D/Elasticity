@@ -116,6 +116,8 @@ def build_bar_scene(root, length, young_modulus, poisson_ratio, nx, nodal_forces
         "Sofa.Component.Topology.Container.Dynamic",
     ])
     root.addObject('DefaultAnimationLoop')
+    root.addObject('VisualStyle',
+                   displayFlags="showBehaviorModels showForceFields")
 
     h         = length / (nx - 1)
     positions = [[i * h] for i in range(nx)]
