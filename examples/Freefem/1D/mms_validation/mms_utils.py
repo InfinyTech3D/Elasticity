@@ -61,3 +61,15 @@ def l2_error(nodes, u_h, u_ex, quadrature):
         u_interp = lambda x, x1=x1, h=h, u_a=u_a, u_b=u_b: u_a + (u_b - u_a) * (x - x1) / h
         total += quadrature(lambda x: (u_interp(x) - u_ex(x)) ** 2, x1, x2)
     return np.sqrt(total)
+
+
+def h1_semi_error(nodes, u_h, du_ex, quadrature):
+    """H1 semi-norm error: sqrt( integral (du_h - du_ex)^2 dx ) over the mesh."""
+    total = 0.0
+    for i in range(len(nodes) - 1):
+        x1, x2 = nodes[i], nodes[i + 1]
+        h = x2 - x1
+        # du_h = sum_a u_a * dphi_a/dx, with dphi_a/dx = -1/h, dphi_b/dx = +1/h
+        du_h = u_h[i] * (-1.0 / h) + u_h[i + 1] * (1.0 / h)
+        total += quadrature(lambda x, du_h=du_h: (du_h - du_ex(x)) ** 2, x1, x2)
+    return np.sqrt(total)
