@@ -15,7 +15,9 @@ RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results"
 # Parameters
 # ---------------------------------------------------------------------------
 
-def load_params(path="params.json"):
+def load_params(path=None):
+    if path is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "params.json")
     with open(path) as f:
         return json.load(f)
 
@@ -170,6 +172,46 @@ def run_bar_mms(length, young_modulus, poisson_ratio, nx, nodal_forces, apply_bc
     u  = dofs.position.array().flatten() - x0
     Sofa.Simulation.unload(root)
     return x0, u
+
+
+# ---------------------------------------------------------------------------
+# Convergence study
+# ---------------------------------------------------------------------------
+
+def convergence_study(case, L, nx_list, run_fn, error_fns, ref_slopes):
+    """
+    Run a mesh refinement convergence study and write results.
+
+    run_fn    : callable(nx) -> (x0, u_h)
+    error_fns : dict { label: callable(x0, u_h) -> float }
+    ref_slopes: dict { label: (error_key, slope) }
+                where error_key is a key in error_fns, used to anchor the
+                O(h^p) reference line in the convergence plot
+    """
+    hs     = []
+    errors = {label: [] for label in error_fns}
+    rows   = []
+
+    for k, nx_k in enumerate(nx_list):
+        h_k     = L / (nx_k - 1)
+        x0, u_h = run_fn(nx_k)
+        row     = {"nx": nx_k, "h": h_k}
+
+        for label, err_fn in error_fns.items():
+            e_k  = err_fn(x0, u_h)
+            rate = (f"{np.log(e_k / errors[label][-1]) / np.log(h_k / hs[-1]):.2f}"
+                    if k > 0 else "")
+            errors[label].append(e_k)
+            row[label]            = e_k
+            row[f"rate_{label}"]  = rate
+
+        hs.append(h_k)
+        rows.append(row)
+
+    write_convergence_table(case, rows)
+    plot_convergence(case, hs, errors,
+                     {label: (errors[err_key], slope)
+                      for label, (err_key, slope) in ref_slopes.items()})
 
 
 # ---------------------------------------------------------------------------

@@ -24,15 +24,14 @@ from mms_utils import (
     l2_error,
     h1_semi_error,
     write_solution_table,
-    write_convergence_table,
     plot_solution,
-    plot_convergence,
+    convergence_study,
 )
 
 CASE_NAME = "sinusoidal"
 
 
-def u_ex(x, L=None):
+def u_ex(x):
     return np.sin(np.pi * x)
 
 
@@ -40,7 +39,7 @@ def du_ex(x):
     return np.pi * np.cos(np.pi * x)
 
 
-def f_body(x, E, L=None):
+def f_body(x, E):
     return E * np.pi**2 * np.sin(np.pi * x)
 
 
@@ -60,7 +59,18 @@ def _run(L, E, nu, nx):
     return run_bar_mms(L, E, nu, nx, nodal_forces, make_apply_bcs(E, L))
 
 
-def main():
+def createScene(rootNode):
+    cfg  = load_params()
+    L, E = cfg["length"], cfg["youngModulus"]
+    nu   = cfg["poissonRatio"]
+    nx   = cfg["nx"]
+    nodes        = np.linspace(0, L, nx)
+    nodal_forces = assemble_nodal_forces(lambda x: f_body(x, E), nodes, gauss2_quadrature)
+    build_bar_scene(rootNode, L, E, nu, nx, nodal_forces, make_apply_bcs(E, L))
+    return rootNode
+
+
+if __name__ == "__main__":
     cfg     = load_params()
     L, E    = cfg["length"], cfg["youngModulus"]
     nu, nx  = cfg["poissonRatio"], cfg["nx"]
@@ -74,37 +84,8 @@ def main():
     plot_solution(CASE_NAME, x0, u_h, u_ex, r"$\sin(\pi x)$")
 
     # Convergence study
-    hs, l2_list, h1_list, rows = [], [], [], []
-    for k, nx_k in enumerate(nx_list):
-        h_k          = L / (nx_k - 1)
-        x0_k, u_h_k  = _run(L, E, nu, nx_k)
-        l2_k         = l2_error(x0_k, u_h_k, u_ex, gauss2_quadrature)
-        h1_k         = h1_semi_error(x0_k, u_h_k, du_ex, gauss2_quadrature)
-        log_h        = np.log(h_k / hs[-1]) if k > 0 else None
-        rate_l2      = f"{np.log(l2_k / l2_list[-1]) / log_h:.2f}" if k > 0 else ""
-        rate_h1      = f"{np.log(h1_k / h1_list[-1]) / log_h:.2f}" if k > 0 else ""
-        hs.append(h_k)
-        l2_list.append(l2_k)
-        h1_list.append(h1_k)
-        rows.append({"nx": nx_k, "h": h_k, "L2": l2_k, "rate_L2": rate_l2,
-                     "H1_semi": h1_k, "rate_H1": rate_h1})
-
-    write_convergence_table(CASE_NAME, rows)
-    plot_convergence(CASE_NAME, hs,
-                     {"L2": l2_list, "H1 semi": h1_list},
-                     {r"O(h$^2$)": (l2_list, 2), r"O(h$^1$)": (h1_list, 1)})
-
-
-def createScene(rootNode):
-    cfg  = load_params()
-    L, E = cfg["length"], cfg["youngModulus"]
-    nu   = cfg["poissonRatio"]
-    nx   = cfg["nx"]
-    nodes        = np.linspace(0, L, nx)
-    nodal_forces = assemble_nodal_forces(lambda x: f_body(x, E), nodes, gauss2_quadrature)
-    build_bar_scene(rootNode, L, E, nu, nx, nodal_forces, make_apply_bcs(E, L))
-    return rootNode
-
-
-if __name__ == "__main__":
-    main()
+    convergence_study(CASE_NAME, L, nx_list,
+        run_fn     = lambda nx: _run(L, E, nu, nx),
+        error_fns  = {"L2":      lambda x, u: l2_error(x, u, u_ex, gauss2_quadrature),
+                      "H1_semi": lambda x, u: h1_semi_error(x, u, du_ex, gauss2_quadrature)},
+        ref_slopes = {r"O(h$^2$)": ("L2", 2), r"O(h$^1$)": ("H1_semi", 1)})
