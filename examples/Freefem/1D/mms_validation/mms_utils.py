@@ -294,8 +294,8 @@ def plot_convergence(case, hs, error_series, reference_slopes):
     for (label, errors), marker in zip(error_series.items(), markers):
         ax.loglog(h_arr, errors, marker, label=label, linewidth=2, markersize=7)
     for label, (ref_errors, slope) in reference_slopes.items():
-        scale = np.array(ref_errors)[0] * (h_ref[0] / h_arr[0]) ** slope
-        ax.loglog(h_ref, scale * (h_ref / h_ref[0]) ** slope,
+        e_last = np.array(ref_errors)[-1]
+        ax.loglog(h_ref, e_last * (h_ref / h_arr[-1]) ** slope,
                   "k--", linewidth=1.5, label=label)
     ax.set_xlabel("h")
     ax.set_ylabel("Error")
