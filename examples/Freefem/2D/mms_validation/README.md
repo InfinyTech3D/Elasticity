@@ -2,16 +2,6 @@
 
 ## Mathematical Problem
 
-### 2D linear elasticity (small strain)
-
-$$
-\begin{cases}
-\displaystyle \frac{\partial \sigma_{xx}}{\partial x} + \frac{\partial \sigma_{xy}}{\partial y} + f_x(x,y) = 0 \\[10pt]
-\displaystyle \frac{\partial \sigma_{xy}}{\partial x} + \frac{\partial \sigma_{yy}}{\partial y} + f_y(x,y) = 0
-\end{cases}
-\quad \forall (x,y) \in [0, L] \times [0, L]
-$$
-
 ### Variables and parameters
 
 - $u_x(x,y)$, $u_y(x,y)$: displacement components
@@ -19,6 +9,16 @@ $$
 - $L$: domain side length
 - $E$: Young's modulus
 - $f_x(x,y)$, $f_y(x,y)$: body forces per unit area
+
+### 2D linear elasticity (small strain)
+
+$$
+\begin{aligned}
+\frac{\partial \sigma_{xx}}{\partial x} + \frac{\partial \sigma_{xy}}{\partial y} + f_x(x,y) &= 0 \\
+\frac{\partial \sigma_{xy}}{\partial x} + \frac{\partial \sigma_{yy}}{\partial y} + f_y(x,y) &= 0
+\end{aligned}
+\quad \forall (x,y) \in [0, L] \times [0, L]
+$$
 
 ### Boundary conditions
 
