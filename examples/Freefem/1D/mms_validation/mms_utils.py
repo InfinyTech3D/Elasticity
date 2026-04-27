@@ -98,7 +98,7 @@ def h1_semi_error(nodes, u_h, du_ex, quadrature):
 # SOFA runner
 # ---------------------------------------------------------------------------
 
-def build_bar_scene(root, length, young_modulus, poisson_ratio, nx, nodal_forces, apply_bcs):
+def build_bar_scene(root, length, young_modulus, nx, nodal_forces, apply_bcs):
     """
     Populate root with a static 1D bar scene.
 
@@ -116,6 +116,7 @@ def build_bar_scene(root, length, young_modulus, poisson_ratio, nx, nodal_forces
         "Sofa.Component.ODESolver.Backward",
         "Sofa.Component.StateContainer",
         "Sofa.Component.Topology.Container.Dynamic",
+        "Sofa.Component.Visual",
     ])
     root.addObject('DefaultAnimationLoop')
     root.addObject('VisualStyle',
@@ -148,7 +149,6 @@ def build_bar_scene(root, length, young_modulus, poisson_ratio, nx, nodal_forces
                   name="FEM",
                   template="Vec1d",
                   youngModulus=young_modulus,
-                  poissonRatio=poisson_ratio,
                   topology="@topology")
 
     Bar.addObject('ConstantForceField',
@@ -161,11 +161,10 @@ def build_bar_scene(root, length, young_modulus, poisson_ratio, nx, nodal_forces
     return dofs
 
 
-def run_bar_mms(length, young_modulus, poisson_ratio, nx, nodal_forces, apply_bcs):
+def run_bar_mms(length, young_modulus, nx, nodal_forces, apply_bcs):
     """Build, run one static step, and return (node_positions, displacements)."""
     root = Sofa.Core.Node("root")
-    dofs = build_bar_scene(root, length, young_modulus, poisson_ratio,
-                           nx, nodal_forces, apply_bcs)
+    dofs = build_bar_scene(root, length, young_modulus, nx, nodal_forces, apply_bcs)
     Sofa.Simulation.init(root)
     x0 = dofs.position.array().copy().flatten()
     Sofa.Simulation.animate(root, root.dt.value)

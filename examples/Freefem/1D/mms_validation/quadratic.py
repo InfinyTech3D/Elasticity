@@ -43,39 +43,38 @@ def make_apply_bcs(E, L):
     return apply_bcs
 
 
-def _run(L, E, nu, nx):
+def _run(L, E, nx):
     nodes        = np.linspace(0, L, nx)
     nodal_forces = assemble_nodal_forces(lambda x: f_body(x, E, L), nodes, midpoint_quadrature)
-    return run_bar_mms(L, E, nu, nx, nodal_forces, make_apply_bcs(E, L))
+    return run_bar_mms(L, E, nx, nodal_forces, make_apply_bcs(E, L))
 
 
 def createScene(rootNode):
     cfg  = load_params()
     L, E = cfg["length"], cfg["youngModulus"]
-    nu   = cfg["poissonRatio"]
     nx   = cfg["nx"]
     nodes        = np.linspace(0, L, nx)
     nodal_forces = assemble_nodal_forces(lambda x: f_body(x, E, L), nodes, midpoint_quadrature)
-    build_bar_scene(rootNode, L, E, nu, nx, nodal_forces, make_apply_bcs(E, L))
+    build_bar_scene(rootNode, L, E, nx, nodal_forces, make_apply_bcs(E, L))
     return rootNode
 
 
 if __name__ == "__main__":
     cfg     = load_params()
     L, E    = cfg["length"], cfg["youngModulus"]
-    nu, nx  = cfg["poissonRatio"], cfg["nx"]
+    nx      = cfg["nx"]
     nx_list = cfg["nxConvergence"][CASE_NAME]
 
     u_exact = lambda x: u_ex(x, L)
 
     # Single solution
-    x0, u_h = _run(L, E, nu, nx)
+    x0, u_h = _run(L, E, nx)
     err      = l2_error(x0, u_h, u_exact, midpoint_quadrature)
     write_solution_table(CASE_NAME, x0, u_h, u_exact, {"L2": err})
     plot_solution(CASE_NAME, x0, u_h, u_exact, r"$x(L-x)/L^2$")
 
     # Convergence study
     convergence_study(CASE_NAME, L, nx_list,
-        run_fn     = lambda nx: _run(L, E, nu, nx),
+        run_fn     = lambda nx: _run(L, E, nx),
         error_fns  = {"L2": lambda x, u: l2_error(x, u, u_exact, midpoint_quadrature)},
         ref_slopes = {r"O(h$^2$)": ("L2", 2)})

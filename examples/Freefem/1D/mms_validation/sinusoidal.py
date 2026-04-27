@@ -53,31 +53,30 @@ def make_apply_bcs(E, L):
     return apply_bcs
 
 
-def _run(L, E, nu, nx):
+def _run(L, E, nx):
     nodes        = np.linspace(0, L, nx)
     nodal_forces = assemble_nodal_forces(lambda x: f_body(x, E), nodes, gauss2_quadrature)
-    return run_bar_mms(L, E, nu, nx, nodal_forces, make_apply_bcs(E, L))
+    return run_bar_mms(L, E, nx, nodal_forces, make_apply_bcs(E, L))
 
 
 def createScene(rootNode):
     cfg  = load_params()
     L, E = cfg["length"], cfg["youngModulus"]
-    nu   = cfg["poissonRatio"]
     nx   = cfg["nx"]
     nodes        = np.linspace(0, L, nx)
     nodal_forces = assemble_nodal_forces(lambda x: f_body(x, E), nodes, gauss2_quadrature)
-    build_bar_scene(rootNode, L, E, nu, nx, nodal_forces, make_apply_bcs(E, L))
+    build_bar_scene(rootNode, L, E, nx, nodal_forces, make_apply_bcs(E, L))
     return rootNode
 
 
 if __name__ == "__main__":
     cfg     = load_params()
     L, E    = cfg["length"], cfg["youngModulus"]
-    nu, nx  = cfg["poissonRatio"], cfg["nx"]
+    nx      = cfg["nx"]
     nx_list = cfg["nxConvergence"][CASE_NAME]
 
     # Single solution
-    x0, u_h = _run(L, E, nu, nx)
+    x0, u_h = _run(L, E, nx)
     l2  = l2_error(x0, u_h, u_ex, gauss2_quadrature)
     h1  = h1_semi_error(x0, u_h, du_ex, gauss2_quadrature)
     write_solution_table(CASE_NAME, x0, u_h, u_ex, {"L2": l2, "H1_semi": h1})
@@ -85,7 +84,7 @@ if __name__ == "__main__":
 
     # Convergence study
     convergence_study(CASE_NAME, L, nx_list,
-        run_fn     = lambda nx: _run(L, E, nu, nx),
+        run_fn     = lambda nx: _run(L, E, nx),
         error_fns  = {"L2":      lambda x, u: l2_error(x, u, u_ex, gauss2_quadrature),
                       "H1_semi": lambda x, u: h1_semi_error(x, u, du_ex, gauss2_quadrature)},
         ref_slopes = {r"O(h$^2$)": ("L2", 2), r"O(h$^1$)": ("H1_semi", 1)})
