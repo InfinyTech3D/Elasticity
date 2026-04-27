@@ -2,14 +2,6 @@
 
 ## Mathematical Problem
 
-### Variables and parameters
-
-- $u_x(x,y)$, $u_y(x,y)$: displacement components
-- $x$, $y$: spatial coordinates
-- $L$: domain side length
-- $E$: Young's modulus
-- $f_x(x,y)$, $f_y(x,y)$: body forces per unit area
-
 ### 2D linear elasticity (small strain)
 
 $$
@@ -19,6 +11,14 @@ $$
 \end{aligned}
 \quad \forall (x,y) \in [0, L] \times [0, L]
 $$
+
+### Variables and parameters
+
+- $x$, $y$: spatial coordinates
+- $u_x(x,y)$, $u_y(x,y)$: displacement components
+- $f_x(x,y)$, $f_y(x,y)$: body forces per unit area
+- $L$: domain side length
+- $E$: Young's modulus
 
 ### Boundary conditions
 
