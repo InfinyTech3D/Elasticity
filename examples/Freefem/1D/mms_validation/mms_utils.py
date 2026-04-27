@@ -98,9 +98,9 @@ def h1_semi_error(nodes, u_h, du_ex, quadrature):
 # SOFA runner
 # ---------------------------------------------------------------------------
 
-def build_bar_scene(root, length, young_modulus, nx, nodal_forces, apply_bcs):
+def build_bar_scene(root, young_modulus, nx, nodal_forces, apply_bcs):
     """
-    Populate root with a static 1D bar scene.
+    Populate root with a static 1D bar scene on the non-dimensional domain [0,1].
 
     nodal_forces : array of length nx, assembled body force vector
     apply_bcs    : callable(Bar, nx) that adds all boundary conditions
@@ -122,7 +122,7 @@ def build_bar_scene(root, length, young_modulus, nx, nodal_forces, apply_bcs):
     root.addObject('VisualStyle',
                    displayFlags="showBehaviorModels showForceFields")
 
-    h         = length / (nx - 1)
+    h         = 1.0 / (nx - 1)
     positions = [[i * h] for i in range(nx)]
     edges     = [[i, i + 1] for i in range(nx - 1)]
 
@@ -161,10 +161,10 @@ def build_bar_scene(root, length, young_modulus, nx, nodal_forces, apply_bcs):
     return dofs
 
 
-def run_bar_mms(length, young_modulus, nx, nodal_forces, apply_bcs):
+def run_bar_mms(young_modulus, nx, nodal_forces, apply_bcs):
     """Build, run one static step, and return (node_positions, displacements)."""
     root = Sofa.Core.Node("root")
-    dofs = build_bar_scene(root, length, young_modulus, nx, nodal_forces, apply_bcs)
+    dofs = build_bar_scene(root, young_modulus, nx, nodal_forces, apply_bcs)
     Sofa.Simulation.init(root)
     x0 = dofs.position.array().copy().flatten()
     Sofa.Simulation.animate(root, root.dt.value)
@@ -177,7 +177,7 @@ def run_bar_mms(length, young_modulus, nx, nodal_forces, apply_bcs):
 # Convergence study
 # ---------------------------------------------------------------------------
 
-def convergence_study(case, L, nx_list, run_fn, error_fns, ref_slopes):
+def convergence_study(case, nx_list, run_fn, error_fns, ref_slopes):
     """
     Run a mesh refinement convergence study and write results.
 
@@ -192,7 +192,7 @@ def convergence_study(case, L, nx_list, run_fn, error_fns, ref_slopes):
     rows   = []
 
     for k, nx_k in enumerate(nx_list):
-        h_k     = L / (nx_k - 1)
+        h_k     = 1.0 / (nx_k - 1)
         x0, u_h = run_fn(nx_k)
         row     = {"nx": nx_k, "h": h_k}
 

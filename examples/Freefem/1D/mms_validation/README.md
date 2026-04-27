@@ -124,13 +124,13 @@ $$
 ### Manufactured Solution
 
 $$
-u_{ex}(x) = \sin(\pi x)
+u_{ex}(x) = \sin(2\pi x)
 $$
 
 ### Source Term
 
 $$
-f(x) = E \pi^2 \sin(\pi x)
+f(x) = 4 E \pi^2 \sin(2\pi x)
 $$
 
 ### Boundary Conditions
@@ -140,7 +140,7 @@ u(0) = 0
 $$
 
 $$
-E \left.\frac{du}{dx}\right|_{L} = E \pi \cos(\pi L)
+E \left.\frac{du}{dx}\right|_{L} = 2 E \pi \cos(2\pi L)
 $$
 
 ### Source Term Discretization

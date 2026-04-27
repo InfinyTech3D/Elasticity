@@ -1,13 +1,13 @@
 """
-Sinusoidal MMS: u_ex(x) = sin(pi*x)
+Sinusoidal MMS: û_ex(ξ) = sin(2πξ),  ξ = x/L ∈ [0,1]
 
-Equilibrium E*u'' + f = 0  =>  f(x) = E*pi^2*sin(pi*x)
+Non-dimensional problem:  Ê·û'' + f̂ = 0  =>  f̂(ξ) = 4π²Ê·sin(2πξ)  (Ê = E/L)
 
 BC:
-    u(0)  = 0                    (Dirichlet)
-    u'(L) = pi*cos(pi*L)         (Neumann)  =>  F_N = E*pi*cos(pi*L)
+    û(0)  = 0                    (Dirichlet)
+    û'(1) = 2π·cos(2π) = 2π     (Neumann)  =>  F̂_N = 2πÊ
 
-Note: f(x) is transcendental so 2-point Gauss quadrature is used for assembly.
+Note: f̂ is transcendental so 2-point Gauss quadrature is used for assembly.
 The H1 error must also be evaluated with gauss2_quadrature to correctly recover
 O(h^1) convergence — the element midpoint is a superconvergence point for the
 gradient of P1 elements, so midpoint_quadrature would artificially give O(h^2).
@@ -31,41 +31,43 @@ from mms_utils import (
 CASE_NAME = "sinusoidal"
 
 
-def u_ex(x):
-    return np.sin(np.pi * x)
+def u_ex(xi):
+    return np.sin(2.0 * np.pi * xi)
 
 
-def du_ex(x):
-    return np.pi * np.cos(np.pi * x)
+def du_ex(xi):
+    return 2.0 * np.pi * np.cos(2.0 * np.pi * xi)
 
 
-def f_body(x, E):
-    return E * np.pi**2 * np.sin(np.pi * x)
+def f_body(xi, E_eff):
+    return 4.0 * np.pi**2 * E_eff * np.sin(2.0 * np.pi * xi)
 
 
-def make_apply_bcs(E, L):
+def make_apply_bcs(E_eff):
     def apply_bcs(Bar, nx):
         Bar.addObject('FixedProjectiveConstraint', indices=0)
         Bar.addObject('ConstantForceField',
                       name="NeumannTip",
                       indices=nx - 1,
-                      forces=E * np.pi * np.cos(np.pi * L))
+                      forces=2.0 * np.pi * E_eff)
     return apply_bcs
 
 
 def _run(L, E, nx):
-    nodes        = np.linspace(0, L, nx)
-    nodal_forces = assemble_nodal_forces(lambda x: f_body(x, E), nodes, gauss2_quadrature)
-    return run_bar_mms(L, E, nx, nodal_forces, make_apply_bcs(E, L))
+    E_eff        = E / L
+    nodes        = np.linspace(0, 1, nx)
+    nodal_forces = assemble_nodal_forces(lambda xi: f_body(xi, E_eff), nodes, gauss2_quadrature)
+    return run_bar_mms(E_eff, nx, nodal_forces, make_apply_bcs(E_eff))
 
 
 def createScene(rootNode):
     cfg  = load_params()
     L, E = cfg["length"], cfg["youngModulus"]
     nx   = cfg["nx"]
-    nodes        = np.linspace(0, L, nx)
-    nodal_forces = assemble_nodal_forces(lambda x: f_body(x, E), nodes, gauss2_quadrature)
-    build_bar_scene(rootNode, L, E, nx, nodal_forces, make_apply_bcs(E, L))
+    E_eff        = E / L
+    nodes        = np.linspace(0, 1, nx)
+    nodal_forces = assemble_nodal_forces(lambda xi: f_body(xi, E_eff), nodes, gauss2_quadrature)
+    build_bar_scene(rootNode, E_eff, nx, nodal_forces, make_apply_bcs(E_eff))
     return rootNode
 
 
@@ -80,10 +82,10 @@ if __name__ == "__main__":
     l2  = l2_error(x0, u_h, u_ex, gauss2_quadrature)
     h1  = h1_semi_error(x0, u_h, du_ex, gauss2_quadrature)
     write_solution_table(CASE_NAME, x0, u_h, u_ex, {"L2": l2, "H1_semi": h1})
-    plot_solution(CASE_NAME, x0, u_h, u_ex, r"$\sin(\pi x)$")
+    plot_solution(CASE_NAME, x0, u_h, u_ex, r"$\sin(2\pi x)$")
 
     # Convergence study
-    convergence_study(CASE_NAME, L, nx_list,
+    convergence_study(CASE_NAME, nx_list,
         run_fn     = lambda nx: _run(L, E, nx),
         error_fns  = {"L2":      lambda x, u: l2_error(x, u, u_ex, gauss2_quadrature),
                       "H1_semi": lambda x, u: h1_semi_error(x, u, du_ex, gauss2_quadrature)},
