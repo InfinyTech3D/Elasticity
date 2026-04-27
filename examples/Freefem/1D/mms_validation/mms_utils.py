@@ -1,9 +1,19 @@
 """Shared utilities for 1D MMS validation."""
 
+import json
 import numpy as np
 import Sofa
 import Sofa.Core
 import Sofa.Simulation
+
+
+# ---------------------------------------------------------------------------
+# Parameters
+# ---------------------------------------------------------------------------
+
+def load_params(path="params.json"):
+    with open(path) as f:
+        return json.load(f)
 
 
 # ---------------------------------------------------------------------------
