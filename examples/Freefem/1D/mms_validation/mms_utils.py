@@ -1,6 +1,9 @@
 """Shared utilities for 1D MMS validation."""
 
 import numpy as np
+import Sofa
+import Sofa.Core
+import Sofa.Simulation
 
 
 # ---------------------------------------------------------------------------
@@ -73,3 +76,75 @@ def h1_semi_error(nodes, u_h, du_ex, quadrature):
         du_h = u_h[i] * (-1.0 / h) + u_h[i + 1] * (1.0 / h)
         total += quadrature(lambda x, du_h=du_h: (du_h - du_ex(x)) ** 2, x1, x2)
     return np.sqrt(total)
+
+
+# ---------------------------------------------------------------------------
+# SOFA runner
+# ---------------------------------------------------------------------------
+
+def run_bar_mms(length, young_modulus, poisson_ratio, nx, nodal_forces, apply_bcs):
+    """
+    Build and run a static 1D bar simulation.
+
+    nodal_forces : array of length nx, assembled body force vector
+    apply_bcs    : callable(Bar, nx) that adds all boundary conditions
+                   (FixedProjectiveConstraint + Neumann ConstantForceField)
+
+    Returns (node_positions, displacements).
+    """
+    root = Sofa.Core.Node("root")
+
+    root.addObject('RequiredPlugin', pluginName=[
+        "Elasticity",
+        "Sofa.Component.Constraint.Projective",
+        "Sofa.Component.LinearSolver.Direct",
+        "Sofa.Component.MechanicalLoad",
+        "Sofa.Component.ODESolver.Backward",
+        "Sofa.Component.StateContainer",
+        "Sofa.Component.Topology.Container.Dynamic",
+    ])
+    root.addObject('DefaultAnimationLoop')
+
+    h         = length / (nx - 1)
+    positions = [[i * h] for i in range(nx)]
+    edges     = [[i, i + 1] for i in range(nx - 1)]
+
+    Bar = root.addChild('Bar')
+    Bar.addObject('NewtonRaphsonSolver',
+                  name="newtonSolver",
+                  maxNbIterationsNewton=10,
+                  absoluteResidualStoppingThreshold=1e-10,
+                  printLog=False)
+    Bar.addObject('SparseLDLSolver',
+                  name="linearSolver",
+                  template="CompressedRowSparseMatrixd")
+    Bar.addObject('StaticSolver',
+                  name="staticSolver",
+                  newtonSolver="@newtonSolver",
+                  linearSolver="@linearSolver")
+
+    dofs = Bar.addObject('MechanicalObject',
+                         name="dofs",
+                         template="Vec1d",
+                         position=positions)
+    Bar.addObject('EdgeSetTopologyContainer', name="topology", edges=edges)
+    Bar.addObject('LinearSmallStrainFEMForceField',
+                  name="FEM",
+                  template="Vec1d",
+                  youngModulus=young_modulus,
+                  poissonRatio=poisson_ratio,
+                  topology="@topology")
+
+    Bar.addObject('ConstantForceField',
+                  name="BodyForce",
+                  indices=list(range(nx)),
+                  forces=nodal_forces)
+
+    apply_bcs(Bar, nx)
+
+    Sofa.Simulation.init(root)
+    x0 = dofs.position.array().copy().flatten()
+    Sofa.Simulation.animate(root, root.dt.value)
+    u  = dofs.position.array().flatten() - x0
+    Sofa.Simulation.unload(root)
+    return x0, u
