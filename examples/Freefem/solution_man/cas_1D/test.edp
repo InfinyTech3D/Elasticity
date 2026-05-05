@@ -1,0 +1,40 @@
+real E  = 1000.0;
+real L  = 1.0;
+real pi = acos(-1.0);
+
+// Verification : u(x) = sin(pi*x)
+// u'(x) = pi*cos(pi*x)
+// u''(x) = -pi^2*sin(pi*x)
+// -E*u''(x) = E*pi^2*sin(pi*x) = f(x)  ✓
+// u(0) = sin(0) = 0                     ✓ Dirichlet
+// E*u'(L) = E*pi*cos(pi*1) = -E*pi      ← valeur de g
+
+real g = E * pi * cos(pi * L);
+cout << "g = " << g << endl;
+// g = -3141.59
+
+// MAIS : on veut que la solution soit sin(pi*x) qui vaut 0 en x=L
+// et u'(L) = pi*cos(pi) = -pi
+// Donc la condition naturelle est E*u'(L) = -E*pi ≈ -3141.59
+// C'est une traction VERS LA GAUCHE en x=L
+
+// Question : est-ce physiquement coherent ?
+// u(x) = sin(pi*x) monte de 0 a 1 puis redescend a 0
+// u'(0) = pi > 0 : traction vers la droite en x=0... 
+// mais on a Dirichlet en x=0, pas Neumann !
+// u'(L) = -pi < 0 : compression en x=L
+
+// CONCLUSION : la solution manufacturee sin(pi*x) avec ces CL
+// (Dirichlet u(0)=0, Neumann E*u'(L)=g<0)
+// donne une barre en COMPRESSION a droite
+// Ce n'est pas le probleme, mais verifions l'equilibre :
+real integralf = 0;
+int n = 1000;
+real h = L / n;
+for (int i = 0; i < n; i++) {
+    real xm = (i + 0.5) * h;
+    integralf += E * pi^2 * sin(pi * xm) * h;
+}
+cout << "f dx = " << integralf << endl;  // doit valoir 2*E*pi ≈ 6283
+cout << "-g    = " << -g << endl;           // = +3141 = E*pi
+// Si ∫f dx ≠ -g, le probleme n'est PAS en equilibre !

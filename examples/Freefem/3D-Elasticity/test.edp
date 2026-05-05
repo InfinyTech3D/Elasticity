@@ -1,0 +1,9 @@
+load "msh3"
+load "gmsh"
+load"medit"
+mesh3 Th = gmshload3("results/beam3d.msh");
+medit ("maillage", Th);
+
+cout << "Nombre de noeuds    : " << Th.nv << endl;
+cout << "Nombre de tetraedres: " << Th.nt << endl;
+cout << "Nombre de triangles : " << Th.nbe << endl;

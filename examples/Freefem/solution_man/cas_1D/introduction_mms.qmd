@@ -1,0 +1,370 @@
+---
+title: "The Method of Manufactured Solutions (MMS)"
+subtitle: "Principles, Application, and Code Verification in Linear Elasticity"
+author: "IMACHE Fatima"
+date: today
+lang: en
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    theme: cosmo
+    code-fold: false
+  pdf:
+    toc: true
+    number-sections: true
+    geometry: margin=2.5cm
+bibliography: reference.bib
+---
+
+## Introduction
+
+Verifying a finite element code is an essential step before any serious use.
+A coding error --- even a minor one --- can produce results that appear plausible
+while being fundamentally wrong. The **Method of Manufactured Solutions** (MMS)
+provides a rigorous and systematic framework for detecting such errors and
+confirming that the code correctly solves the equations it is intended to solve.
+
+This document addresses the following questions:
+
+1. What is the MMS and why use it?
+2. How to apply it concretely (1D then 2D)?
+3. What metric should be used to measure accuracy?
+
+---
+
+## What Is the MMS? Why Use It?
+
+### General Principle
+
+The MMS rests on a simple idea: **start from an analytically chosen solution**,
+then compute the source term (body force, boundary condition) that corresponds
+to it exactly in the PDE under consideration. The modified problem is then solved
+with the numerical code, and the obtained solution is compared to the known exact
+solution.
+
+Formally, for a PDE of the form:
+
+$$
+\mathcal{L}(u) = f \quad \text{on } \Omega
+$$
+
+one chooses an arbitrary function $u^*$ (the **manufactured solution**),
+computes $f^* = \mathcal{L}(u^*)$ by symbolic differentiation, then solves:
+
+$$
+\mathcal{L}(u_h) = f^* \quad \text{on } \Omega
+$$
+
+The numerical solution $u_h$ must converge toward $u^*$ as the mesh is refined.
+
+### Why Not Use Classical Analytical Solutions?
+
+Problems admitting an exact analytical solution are **rare and often too simple**:
+rectangular domains, constant loadings, trivial boundary conditions. These special
+cases only exercise a subset of the terms in the variational formulation. An error
+in a coupled term or in the treatment of Neumann conditions may therefore go
+undetected.
+
+An additional advantage of the MMS is that one can **freely choose the regularity**
+of the manufactured solution $u^*$. By selecting a function of strictly higher
+order than the discretization, one ensures that the observed convergence rates
+truly reflect the properties of the numerical scheme, rather than a limitation
+imposed by the regularity of the solution.
+
+::: {.callout-note}
+## Key Advantage of the MMS
+The MMS allows testing the code **in full generality**: non-trivial solutions,
+curved domains, inhomogeneous Neumann conditions. As highlighted by
+@chamberland2010, the MMS can simultaneously serve three purposes:
+(1) verifying the implementation, (2) verifying the theoretical convergence order,
+and (3) comparing the performance of different discretizations.
+:::
+
+### What Exactly Is Being Verified?
+
+The MMS is a tool for **code verification**, to be distinguished from
+**validation**. It answers the question: *"Does the code correctly solve the
+discretized equations?"* --- not *"Do the equations faithfully model the
+physics?"*
+
+More precisely, one verifies that:
+
+- the terms of the weak form are correctly integrated,
+- boundary conditions (Dirichlet and Neumann) are correctly enforced,
+- the observed convergence order matches the theoretical order predicted by
+  error analysis.
+
+---
+
+## How to Apply the MMS
+
+### General Steps
+
+The steps for constructing a manufactured solution, as described in
+@chamberland2010 for large-deformation elasticity, generalize naturally to the
+linear case:
+
+1. **Choose** a manufactured solution $u^*$ that is sufficiently regular and of
+   higher order than the discretization;
+2. **Choose** the material properties ($E$, $\nu$ or $\lambda$, $\mu$);
+3. **Analytically compute** the derived fields (gradient, strain tensor, stresses);
+4. **Compute** the source term $f^* = -\nabla \cdot \sigma(u^*)$
+   (artificial body force);
+5. **Choose** the domain $\Omega$ and compute the exact boundary conditions;
+6. **Solve** the modified problem with the numerical code on a sequence of
+   refined meshes;
+7. **Measure** the error $\|u^* - u_h\|$ and verify convergence.
+
+> Steps 3 and 4 are ideally carried out with a symbolic computation tool
+> (Maple, SymPy, Mathematica).
+
+### 1D Example: Elastic Bar
+
+#### Continuous Problem
+
+Consider a bar of length $L = 1$, clamped at $x = 0$ and free at $x = 1$,
+subjected to a body force $f(x)$. The 1D linear elasticity problem reads:
+
+$$
+-\frac{d}{dx}\left(E \frac{du}{dx}\right) = f(x), \quad x \in (0, 1)
+$$
+
+with boundary conditions:
+
+$$
+u(0) = 0 \quad \text{(Dirichlet)}, \qquad E \frac{du}{dx}(1) = 0
+\quad \text{(free Neumann)}
+$$
+
+We take $E = 1$ for simplicity.
+
+#### Choice of Manufactured Solution
+
+We choose a regular function satisfying the Dirichlet condition at $x = 0$:
+
+$$
+u^*(x) = \sin(\pi x)
+$$
+
+#### Computation of the Source Term
+
+Substituting $u^*$ into the PDE:
+
+$$
+f^*(x) = -\frac{d^2 u^*}{dx^2} = \pi^2 \sin(\pi x)
+$$
+
+The exact Neumann condition at $x = 1$ becomes:
+
+$$
+E \frac{du^*}{dx}(1) = \pi \cos(\pi) = -\pi
+$$
+
+#### Manufactured Problem to Solve
+
+We solve numerically:
+
+$$
+-u_h'' = \pi^2 \sin(\pi x), \quad u_h(0) = 0, \quad u_h'(1) = -\pi
+$$
+
+whose exact solution is $u^*(x) = \sin(\pi x)$.
+
+#### Work on Paper and in Code
+
+**On paper:**
+
+- Differentiate $u^*$ to obtain $f^*$ and the exact boundary conditions.
+- Verify the weak form:
+$$
+\int_0^1 E u_h' v' \, dx = \int_0^1 f^* v \, dx + [E u' v]_{\Gamma_N}
+$$
+
+**In code:**
+
+- Implement the source term $f^*(x) = \pi^2 \sin(\pi x)$ as a body force.
+- Enforce the Neumann condition $g = -\pi$ at $x = 1$.
+- Solve on a sequence of meshes $h = 1/4, 1/8, 1/16, 1/32, \ldots$
+- Compute the errors $\|u^* - u_h\|_{L^2}$ and $\|u^* - u_h\|_{H^1}$
+  on each mesh.
+- Plot the error as a function of $h$ on a log-log scale and measure the slope.
+
+### 2D Example: Elastic Plate
+
+#### Continuous Problem
+
+On the square domain $\Omega = (0,1)^2$, the Lamé equations in component form
+read:
+
+$$
+-(\lambda + \mu)\nabla(\nabla \cdot \mathbf{u}) - \mu \Delta \mathbf{u}
+= \mathbf{f} \quad \text{on } \Omega
+$$
+
+with $\mathbf{u} = (u_1, u_2)^T$ and the Lamé coefficients $\lambda$, $\mu$
+related to $E$ and $\nu$ by:
+
+$$
+\lambda = \frac{E\nu}{(1+\nu)(1-2\nu)}, \qquad \mu = \frac{E}{2(1+\nu)}
+$$
+
+We take $E = 1$ and $\nu = 0.3$, giving numerically
+$\lambda \approx 0.577$ and $\mu \approx 0.385$.
+
+Dirichlet conditions are imposed on the entire boundary:
+$\mathbf{u} = \mathbf{u}^*$ on $\partial\Omega$.
+
+#### Choice of Manufactured Solution
+
+We take:
+
+$$
+u_1^*(x, y) = \sin(\pi x)\sin(\pi y), \qquad
+u_2^*(x, y) = \cos(\pi x)\cos(\pi y)
+$$
+
+These functions are regular and exercise **all terms** of the stress tensor,
+including the coupled terms $\varepsilon_{12}$.
+
+#### Computation of the Source Term
+
+Using symbolic computation (e.g., SymPy), one obtains the strain tensor:
+
+$$
+\varepsilon_{ij}(\mathbf{u}^*) =
+\frac{1}{2}\left(\frac{\partial u_i^*}{\partial x_j}
++ \frac{\partial u_j^*}{\partial x_i}\right)
+$$
+
+then the stress tensor (Hooke's law):
+
+$$
+\sigma_{ij} = \lambda \, \delta_{ij} \, \varepsilon_{kk} + 2\mu \, \varepsilon_{ij}
+$$
+
+and finally the artificial body force:
+
+$$
+f_i^* = -\frac{\partial \sigma_{ij}}{\partial x_j}
+$$
+
+The resulting expressions for $f_1^*$ and $f_2^*$ are then injected directly
+into the variational problem. The Dirichlet boundary conditions are given
+directly by $\mathbf{u}^*$ on $\partial\Omega$.
+
+#### Work on Paper and in Code
+
+**On paper:**
+
+- Write the weak form: find $\mathbf{u}_h \in V_h$ such that
+  $\forall \mathbf{v}_h \in V_h$:
+
+$$
+\int_\Omega \sigma(\mathbf{u}_h) : \varepsilon(\mathbf{v}_h) \, d\Omega
+= \int_\Omega \mathbf{f}^* \cdot \mathbf{v}_h \, d\Omega
+$$
+
+- Verify that $\mathbf{u}^*$ satisfies this weak form with the computed
+  $\mathbf{f}^*$.
+
+**In code (e.g., FreeFEM++):**
+
+```freefem
+// Define the manufactured solution
+func u1exact = sin(pi*x)*sin(pi*y);
+func u2exact = cos(pi*x)*cos(pi*y);
+
+// f1* and f2* are computed beforehand by symbolic differentiation (e.g., SymPy)
+// then injected as source terms into the variational problem
+func f1 = ...; // analytical expression obtained symbolically
+func f2 = ...; // idem
+```
+
+- Solve on increasingly fine meshes.
+- Compute $\|u_i^* - u_{h,i}\|_{L^2(\Omega)}$ and
+  $\|\mathbf{u}^* - \mathbf{u}_h\|_{H^1(\Omega)}$.
+- Verify that the log-log slopes match the theoretical orders.
+
+---
+
+## Accuracy Metric and Expected Behavior
+
+### Error Norms
+
+The accuracy of a finite element solution relative to the manufactured solution
+$u^*$ is measured by two main norms:
+
+$$
+\|u^* - u_h\|_{L^2(\Omega)}
+= \left(\int_\Omega |u^* - u_h|^2 \, d\Omega\right)^{1/2}
+$$
+
+$$
+\|u^* - u_h\|_{H^1(\Omega)}
+= \left(\int_\Omega \left(|u^* - u_h|^2
++ |\nabla(u^* - u_h)|^2\right) d\Omega\right)^{1/2}
+$$
+
+The $H^1$ norm is particularly relevant for elliptic problems because it
+controls both the displacement and the gradient (and thus indirectly the
+strains and stresses).
+
+### Expected Convergence Order
+
+For Lagrange finite elements of order $k$, the theory predicts the following
+convergence rates as $h \to 0$:
+
+| Norm  | Expected Order |
+|-------|----------------|
+| $L^2$ | $O(h^{k+1})$   |
+| $H^1$ | $O(h^k)$       |
+
+In practice, one plots $\log(\text{error})$ against $\log(h)$: the slope of
+this line must match the theoretical order. @chamberland2010 illustrate this
+result for $Q_1$ elements (slope $\approx$ 1), $Q_2$ elements (slope $\approx$ 2),
+and $P_2$ elements (slope $\approx$ 2.16) in large deformation --- the same
+orders are observed in linear small-strain elasticity.
+
+### Why Does the $L^2$ Norm Converge?
+
+Convergence in the $L^2$ norm follows from two key ingredients:
+
+1. **Consistency**: the manufactured solution $u^*$ satisfies the continuous
+   equations exactly with the source term $f^*$. The truncation error tends
+   to zero as $h \to 0$.
+
+2. **Stability**: for elliptic problems (including linear elasticity), the
+   coercivity of the bilinear form guarantees that the energy error ($H^1$ norm)
+   is bounded by the approximation error. The **Aubin--Nitsche lemma** then
+   allows one to gain an additional order in the $L^2$ norm.
+
+::: {.callout-important}
+## What a Non-Conforming Rate Reveals
+If the observed slope is lower than the theoretical order, this signals either
+a **coding error** (incorrectly implemented term, wrong boundary condition),
+a problem of **insufficient regularity** of the chosen manufactured solution,
+or a **numerical integration scheme** that is insufficiently accurate for the
+complex source terms generated by the MMS.
+:::
+
+---
+
+## Conclusion
+
+The MMS is a **systematic and rigorous** verification tool. It allows the code
+to be tested under conditions close to real cases (non-trivial solutions, coupled
+terms, general boundary conditions) while having an exact reference available.
+The procedure is the same regardless of the dimension: choose $u^*$, compute
+$f^*$ symbolically, solve the modified problem, and verify convergence in the
+$H^1$ or $L^2$ norm.
+
+In the remainder of this work, this method will be applied to verify the
+implementation of a SOFA plugin for linear elasticity on hexahedral meshes.
+
+---
+
+## References
+
+::: {#refs}
