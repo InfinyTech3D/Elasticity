@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+**/results/
+**/results_scenario*/
+*.log
+*.msh
+*.vtu
+*.pdf
+*.Pdf
+.vscode/
+*.gz
