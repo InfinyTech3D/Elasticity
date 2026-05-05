@@ -1,8 +1,0 @@
-{
-    "meshfile": "bar1d.msh",
-    "length": 1.0,
-    "nx": 100,
-    "force": 1000.0,
-    "youngModulus": 1000.0,
-    "poissonRatio": 0.3
-}
