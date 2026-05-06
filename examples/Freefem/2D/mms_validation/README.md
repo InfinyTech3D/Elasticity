@@ -7,6 +7,8 @@
 $$
 \begin{cases}
 \displaystyle \frac{\partial \sigma_{xx}}{\partial x} + \frac{\partial \sigma_{xy}}{\partial y} + f_x(x,y) = 0 
+\\
+\\
 \displaystyle \frac{\partial \sigma_{xy}}{\partial x} + \frac{\partial \sigma_{yy}}{\partial y} + f_y(x,y) = 0
 \end{cases}
 \quad \forall (x,y) \in [0, L] \times [0, L]
