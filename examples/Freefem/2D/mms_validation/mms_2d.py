@@ -192,6 +192,11 @@ class _QuadElement:
 
         Beam = rootNode.addChild("Beam")
         Beam.addObject("StaticSolver", name="staticSolver", printLog=False)
+        Beam.addObject('NewtonRaphsonSolver',
+                  name="newtonSolver",
+                  maxNbIterationsNewton=1,
+                  absoluteResidualStoppingThreshold=1e-10,
+                  printLog=False)
         Beam.addObject("SparseLDLSolver", name="linearSolver",
                        template="CompressedRowSparseMatrixd")
 
