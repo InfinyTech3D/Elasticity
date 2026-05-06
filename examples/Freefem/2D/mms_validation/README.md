@@ -20,8 +20,10 @@ For $\nu = 0$, the shear modulus reduces to $G = E/2$, so that $2G = E$.
 
 $$
 
-\sigma_{xx} = E\varepsilon_{xx} \qquad
-\sigma_{yy} = E\varepsilon_{yy} \qquad
+\sigma_{xx} = E\varepsilon_{xx} 
+\\
+\sigma_{yy} = E\varepsilon_{yy} 
+\\
 \sigma_{xy} = 2G\varepsilon_{xy} = E\varepsilon_{xy}
 
 $$
