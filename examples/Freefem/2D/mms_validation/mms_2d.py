@@ -175,7 +175,7 @@ class _QuadElement:
         """
         tmpl = _dim_template(dim)
 
-        rootNode.addObject("RequiredPlugin", name="Sofa.component.Visual")
+        rootNode.addObject("RequiredPlugin", pluginName="Sofa.Component.Visual")
         rootNode.addObject("RequiredPlugin", pluginName=[
             "Elasticity", "Sofa.Component.Constraint.Projective",
             "Sofa.Component.Engine.Select", "Sofa.Component.LinearSolver.Direct",
