@@ -663,7 +663,7 @@ if __name__ == "__main__":
     DIM = "3d"          # <── change here
 
     L, E    = 1.0, 1e6
-    nx_vals = [10, 20, 40]
+    nx_vals = [10, 20, 30, 40, 50, 60]
 
     specs = [
         {"elem": element_quad, "label": "Q1 quad", "marker": "o", "color": "C0"},
