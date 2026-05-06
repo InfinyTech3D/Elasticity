@@ -18,10 +18,10 @@ $$
 
 $$
 \begin {cases}
-\displaystyle \sigma_{xx} = E \,\varepsilon_{xx}, \quad
+\displaystyle \sigma_{xx} = E \,\varepsilon_{xx}, 
 \\ 
 \\
-\displaystyle \sigma_{yy} = E \,\varepsilon_{yy}, \quad
+\displaystyle \sigma_{yy} = E \,\varepsilon_{yy}, 
 \\
 \\
 
