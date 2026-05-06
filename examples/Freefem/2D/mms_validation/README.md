@@ -17,9 +17,16 @@ $$
 ### Constitutive law (plane stress, $\nu = 0$)
 
 $$
-\sigma_{xx} = E \,\varepsilon_{xx}, \quad
-\sigma_{yy} = E \,\varepsilon_{yy}, \quad
-\sigma_{xy} = 2G \,\varepsilon_{xy} = E \,\varepsilon_{xy}
+\begin {cases}
+\displaystyle \sigma_{xx} = E \,\varepsilon_{xx}, \quad
+\\ 
+\\
+\displaystyle \sigma_{yy} = E \,\varepsilon_{yy}, \quad
+\\
+\\
+
+\displaystyle \sigma_{xy} = 2G \,\varepsilon_{xy} = E \,\varepsilon_{xy}
+\end{cases}
 $$
 
 ### Strain-displacement relations
