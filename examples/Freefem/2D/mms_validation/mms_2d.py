@@ -14,9 +14,9 @@ GAUSS_PTS = np.array([-1.0 / np.sqrt(3), 1.0 / np.sqrt(3)])
 GAUSS_WTS = np.array([1.0, 1.0])
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MMS manufactured solution & derivatives
-# ─────────────────────────────────────────────────────────────────────────────
+
+#============  MMS manufactured solution & derivatives =====================
+
 
 def ux_mms(x, y, L): return x**2 * (L - x) / L**2
 
@@ -47,16 +47,11 @@ def traction(x, y, nx_c, ny_c, E, L):
     return sxx*nx_c + sxy*ny_c, sxy*nx_c + syy*ny_c
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Mesh helpers
-# ─────────────────────────────────────────────────────────────────────────────
+
+# ============== Mesh helpers ============================
+
 
 def get_nodes_2d(L, nx, ny, dim="2d"):
-    """
-    Return node coordinates on [0,L]².
-    dim="2d"  →  shape (nx*ny, 2)   — Vec2d template
-    dim="3d"  →  shape (nx*ny, 3)   — Vec3d template, z=0 fixed
-    """
     dx = L / (nx - 1)
     dy = L / (ny - 1)
     if dim == "3d":
@@ -67,13 +62,13 @@ def get_nodes_2d(L, nx, ny, dim="2d"):
 
 
 def _dim_template(dim):
-    """Return SOFA template string for the chosen dimension mode."""
+    
     return "Vec3d" if dim == "3d" else "Vec2d"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Q1 quad elements
-# ─────────────────────────────────────────────────────────────────────────────
+
+# =========== Q1 quad elements =========================
+
 
 class _QuadElement:
     LABEL = "Q1 quad"
@@ -118,7 +113,7 @@ class _QuadElement:
         xy = nodes_2d[:, :2]
         F  = np.zeros((len(xy), 2))
 
-        # Body forces — Gauss quadrature over each quad
+        # Body forces -- Gauss quadrature over each quad
         for quad in quads:
             xe, ye = xy[quad, 0], xy[quad, 1]
             for xi, wi in zip(GAUSS_PTS, GAUSS_WTS):
@@ -175,7 +170,7 @@ class _QuadElement:
         """
         tmpl = _dim_template(dim)
 
-        rootNode.addObject("RequiredPlugin", pluginName="Sofa.Component.Visual")
+        rootNode.addObject("RequiredPlugin", name="Sofa.Component.Visual")
         rootNode.addObject("RequiredPlugin", pluginName=[
             "Elasticity", "Sofa.Component.Constraint.Projective",
             "Sofa.Component.Engine.Select", "Sofa.Component.LinearSolver.Direct",
@@ -292,9 +287,8 @@ class _QuadElement:
         return np.sqrt(err2)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # P1 triangle elements
-# ─────────────────────────────────────────────────────────────────────────────
+
 
 class _TriElement:
     LABEL = "P1 tri"
@@ -353,15 +347,10 @@ class _TriElement:
     @staticmethod
     def create_sofa_scene(rootNode, L=1.0, E=1e6, nx=10, ny=10,
                           with_visual=True, dim="2d"):
-        """
-        Build SOFA scene for P1 triangles.
-        dim : "2d"  →  Vec2d template
-              "3d"  →  Vec3d template, z coordinate fixed at 0
-        Returns (dofs, nodes_2d, tris).
-        """
+     
         tmpl = _dim_template(dim)
 
-        rootNode.addObject("RequiredPlugin", name="Sofa.component.Visual")
+        rootNode.addObject("RequiredPlugin", name="Sofa.Component.Visual")
         rootNode.addObject("RequiredPlugin", pluginName=[
             "Elasticity", "Sofa.Component.Constraint.Projective",
             "Sofa.Component.Engine.Select", "Sofa.Component.LinearSolver.Direct",
@@ -378,6 +367,11 @@ class _TriElement:
 
         Beam = rootNode.addChild("Beam")
         Beam.addObject("StaticSolver", name="staticSolver", printLog=False)
+        Beam.addObject('NewtonRaphsonSolver',
+                  name="newtonSolver",
+                  maxNbIterationsNewton=1,
+                  absoluteResidualStoppingThreshold=1e-10,
+                  printLog=False)
         Beam.addObject("SparseLDLSolver", name="linearSolver",
                        template="CompressedRowSparseMatrixd")
 
@@ -650,20 +644,19 @@ element_quad = _QuadElement()
 element_tri  = _TriElement()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Main  ←  change DIM here to switch between "2d" and "3d"
-# ─────────────────────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
 
-    # ┌─────────────────────────────────────────┐
-    # │  DIM = "2d"   →  Vec2d template (plan)  │
-    # │  DIM = "3d"   →  Vec3d template (z=0)   │
-    # └─────────────────────────────────────────┘
-    DIM = "3d"          # <── change here
+    
+    #   DIM = "2d"     Vec2d template (plan)  
+    #   DIM = "3d"     Vec3d template (z=0)   
+
+    DIM = "2d"       
 
     L, E    = 1.0, 1e6
-    nx_vals = [10, 20, 30, 40, 50, 60]
+
+    nx_vals = [10,20,30,40,50,60]
+
+
 
     specs = [
         {"elem": element_quad, "label": "Q1 quad", "marker": "o", "color": "C0"},
