@@ -3,30 +3,29 @@
 ## Mathematical Problem
 
 ### 2D linear elasticity (small strain)
-
-$$
-\begin{cases}
-\displaystyle \frac{\partial \sigma_{xx}}{\partial x} + \frac{\partial \sigma_{xy}}{\partial y} + f_x(x,y) = 0 \\[10pt]
-\displaystyle \frac{\partial \sigma_{xy}}{\partial x} + \frac{\partial \sigma_{yy}}{\partial y} + f_y(x,y) = 0
-\end{cases}
-\quad \forall (x,y) \in [0, L] \times [0, L]
-$$
+\[
+\frac{\partial \sigma_{xx}}{\partial x} + \frac{\partial \sigma_{xy}}{\partial y} + f_x(x,y) = 0
+\]
+\[
+\frac{\partial \sigma_{xy}}{\partial x} + \frac{\partial \sigma_{yy}}{\partial y} + f_y(x,y) = 0
+\]
+\[
+\forall (x,y) \in [0,L] \times [0,L]
 
 ### Constitutive law (plane stress, $\nu = 0$)
-
-$$
-\sigma_{xx} = E \,\varepsilon_{xx}, \quad
-\sigma_{yy} = E \,\varepsilon_{yy}, \quad
-\sigma_{xy} = 2G \,\varepsilon_{xy} = E \,\varepsilon_{xy}
-$$
+\[
+\sigma_{xx} = E \, \varepsilon_{xx}, \qquad
+\sigma_{yy} = E \, \varepsilon_{yy}, \qquad
+\sigma_{xy} = 2G \, \varepsilon_{xy} = E \, \varepsilon_{xy}
+\]
 
 ### Strain-displacement relations
-
-$$
-\varepsilon_{xx} = \frac{\partial u_x}{\partial x}, \quad
-\varepsilon_{yy} = \frac{\partial u_y}{\partial y}, \quad
+\[
+\varepsilon_{xx} = \frac{\partial u_x}{\partial x}, \qquad
+\varepsilon_{yy} = \frac{\partial u_y}{\partial y}, \qquad
 \varepsilon_{xy} = \frac{1}{2}\left( \frac{\partial u_x}{\partial y} + \frac{\partial u_y}{\partial x} \right)
-$$
+\]
+
 
 ### Variables and parameters
 
