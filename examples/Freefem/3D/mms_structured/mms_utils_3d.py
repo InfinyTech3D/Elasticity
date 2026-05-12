@@ -113,6 +113,15 @@ def build_scene_3d(rootNode, L=1.0, E=1e6, nu=0.3, nx=6, ny=6, nz=6,
     rootNode.gravity.value = [0, 0, 0]
     rootNode.dt.value = 1.0
 
+    # This component has to be added at a different node because one Node
+    # cannot have 2 topology components
+    regGrid = rootNode.addChild('GridTopology')
+    regGrid.addObject('RegularGridTopology',
+                    name="grid",
+                    nx=nx, ny=ny, nz=nz,
+                    min=[0., 0., 0.],
+                    max=[L,  L,  L])
+
     solid = rootNode.addChild('Solid3D')
 
     solid.addObject('NewtonRaphsonSolver',
@@ -135,22 +144,15 @@ def build_scene_3d(rootNode, L=1.0, E=1e6, nu=0.3, nx=6, ny=6, nz=6,
                     newtonSolver="@newtonSolver",
                     linearSolver="@linearSolver")
 
-    # ===================== Mesh via RegularGridTopology =================================
-    solid.addObject('RegularGridTopology',
-                    name="grid",
-                    nx=nx, ny=ny, nz=nz,
-                    min=[0., 0., 0.],
-                    max=[L,  L,  L])
+    solid.addObject('HexahedronSetTopologyContainer',
+                    name="topology",
+                    src="@../GridTopology/grid")
+    solid.addObject('HexahedronSetTopologyModifier')
 
     dofs = solid.addObject('MechanicalObject',
                            name="dofs",
                            template="Vec3d",
-                           src="@grid")
-
-    solid.addObject('HexahedronSetTopologyContainer',
-                    name="topology",
-                    src="@grid")
-    solid.addObject('HexahedronSetTopologyModifier')
+                           src="@topology")
 
     solid.addObject('LinearSmallStrainFEMForceField',
                     name="FEM",
