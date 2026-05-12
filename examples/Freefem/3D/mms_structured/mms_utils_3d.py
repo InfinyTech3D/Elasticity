@@ -40,93 +40,52 @@ def node_idx(i, j, k, nx, ny):  return i + j * nx + k * nx * ny
 
  
 
-def compute_nodal_forces(nodes, L, E, nu, nx, ny, nz):
-    
-    dx = L / (nx - 1)
-    dy = L / (ny - 1)
-    dz = L / (nz - 1)
-    F  = np.zeros((len(nodes), 3))
-
+def compute_nodal_forces(nodes, quads, E, nu, L):
     gp = np.array([-1/np.sqrt(3), 1/np.sqrt(3)])
     gw = np.array([1.0, 1.0])
+    F  = np.zeros((len(nodes), 3))
+    centroid = nodes.mean(axis=0)
 
-    def _integrate_face(face, eta_f, zeta_f, Jf, p_coords_fn, traction_fn):
-        for gi, p1 in enumerate(gp):
-            for gj, p2 in enumerate(gp):
-                w = gw[gi] * gw[gj] * Jf
-                coords = p_coords_fn(p1, p2)
-                Tx, Ty, Tz = traction_fn(*coords)
-                for a in range(4):
-                    Na = (1 + eta_f[a]*p1) * (1 + zeta_f[a]*p2) / 4.
-                    F[face[a], 0] += Na * Tx * w
-                    F[face[a], 1] += Na * Ty * w
-                    F[face[a], 2] += Na * Tz * w
+    for quad in quads:
+        x = nodes[quad]  # (4, 3)
+        # determine outward normal sign at quad centre (xi=eta=0)
+        dN_dxi0  = np.array([-1.,  1.,  1., -1.]) / 4
+        dN_deta0 = np.array([-1., -1.,  1.,  1.]) / 4
+        J0   = np.cross(dN_dxi0 @ x, dN_deta0 @ x)
+        sign = 1.0 if np.dot(J0, x.mean(axis=0) - centroid) > 0 else -1.0
 
-    eta_yz  = [-1,  1,  1, -1]
-    zeta_yz = [-1, -1,  1,  1]
-    eta_xz  = [-1,  1,  1, -1]
-    zeta_xz = [-1, -1,  1,  1]
-    xi_xy   = [-1,  1,  1, -1]
-    eta_xy  = [-1, -1,  1,  1]
+        for gi, xi in enumerate(gp):
+            for gj, eta in enumerate(gp):
+                N       = np.array([(1-xi)*(1-eta), (1+xi)*(1-eta),
+                                    (1+xi)*(1+eta), (1-xi)*(1+eta)]) / 4
+                dN_dxi  = np.array([-(1-eta),  (1-eta),  (1+eta), -(1+eta)]) / 4
+                dN_deta = np.array([-(1-xi),  -(1+xi),   (1+xi),  (1-xi)]) / 4
+                J_vec   = np.cross(dN_dxi @ x, dN_deta @ x)
+                Jmag    = np.linalg.norm(J_vec)
+                n_hat   = sign * J_vec / Jmag
+                xg      = N @ x
+                T       = np.array(traction(*xg, *n_hat, E, nu, L))
+                F[quad] += np.outer(N, T) * (gw[gi] * gw[gj] * Jmag)
 
-    Jf = (dy/2) * (dz/2)
-    for k in range(nz - 1):
-        for j in range(ny - 1):
-            y0, z0 = j*dy, k*dz
-            for x_val, nx_c, jj in [(L, +1., ny-1 if False else None),
-                                    (0., -1., None)]:
-                i_node = nx-1 if nx_c > 0 else 0
-                face = [node_idx(i_node, j,   k,   nx, ny),
-                        node_idx(i_node, j+1, k,   nx, ny),
-                        node_idx(i_node, j+1, k+1, nx, ny),
-                        node_idx(i_node, j,   k+1, nx, ny)]
-                _integrate_face(
-                    face, eta_yz, zeta_yz, Jf,
-                    lambda p1, p2, y0=y0, z0=z0:
-                        (x_val, y0 + dy/2 + p1*(dy/2), z0 + dz/2 + p2*(dz/2)),
-                    lambda x, y, z: traction(x, y, z, nx_c, 0., 0., E, nu, L),
-                )
-
-    Jf = (dx/2) * (dz/2)
-    for k in range(nz - 1):
-        for i in range(nx - 1):
-            x0, z0 = i*dx, k*dz
-            for y_val, ny_c in [(L, +1.), (0., -1.)]:
-                j_node = ny-1 if ny_c > 0 else 0
-                face = [node_idx(i,   j_node, k,   nx, ny),
-                        node_idx(i+1, j_node, k,   nx, ny),
-                        node_idx(i+1, j_node, k+1, nx, ny),
-                        node_idx(i,   j_node, k+1, nx, ny)]
-                _integrate_face(
-                    face, eta_xz, zeta_xz, Jf,
-                    lambda p1, p2, x0=x0, z0=z0:
-                        (x0 + dx/2 + p1*(dx/2), y_val, z0 + dz/2 + p2*(dz/2)),
-                    lambda x, y, z: traction(x, y, z, 0., ny_c, 0., E, nu, L),
-                )
-
-    Jf = (dx/2) * (dy/2)
-    for j in range(ny - 1):
-        for i in range(nx - 1):
-            x0, y0 = i*dx, j*dy
-            for z_val, nz_c in [(L, +1.), (0., -1.)]:
-                k_node = nz-1 if nz_c > 0 else 0
-                face = [node_idx(i,   j,   k_node, nx, ny),
-                        node_idx(i+1, j,   k_node, nx, ny),
-                        node_idx(i+1, j+1, k_node, nx, ny),
-                        node_idx(i,   j+1, k_node, nx, ny)]
-                _integrate_face(
-                    face, xi_xy, eta_xy, Jf,
-                    lambda p1, p2, x0=x0, y0=y0:
-                        (x0 + dx/2 + p1*(dx/2), y0 + dy/2 + p2*(dy/2), z_val),
-                    lambda x, y, z: traction(x, y, z, 0., 0., nz_c, E, nu, L),
-                )
-
-    
     res = np.abs(F.sum(axis=0))
     assert res.max() < 1e-6 * np.abs(F).max()
-
     return F
 # =========================== SOFA scene =============================
+class MMSForceController(Sofa.Core.Controller):
+    def __init__(self, dofs, cff, quad_topo, E, nu, L, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dofs      = dofs
+        self.cff       = cff
+        self.quad_topo = quad_topo
+        self.E, self.nu, self.L = E, nu, L
+
+    def onSimulationInitDoneEvent(self, event):
+        nodes = self.dofs.position.array().copy()
+        quads = np.array(self.quad_topo.quads.array())
+        F     = compute_nodal_forces(nodes, quads, self.E, self.nu, self.L)
+        self.cff.forces.value = F.tolist()
+
+
 def build_scene_3d(rootNode, L=1.0, E=1e6, nu=0.3, nx=6, ny=6, nz=6,
                    visual=False):
     
@@ -219,42 +178,30 @@ def build_scene_3d(rootNode, L=1.0, E=1e6, nu=0.3, nx=6, ny=6, nz=6,
                     indices="@fixC.indices",
                     fixedDirections=[0, 0, 1])
 
-    dx = L / (nx - 1)
-    dy = L / (ny - 1)
-    dz = L / (nz - 1)
-    nodes_pre = np.array(
-        [[i*dx, j*dy, k*dz]
-         for k in range(nz)
-         for j in range(ny)
-         for i in range(nx)],
-        dtype=float,
-    )
-    F = compute_nodal_forces(nodes_pre, L, E, nu, nx, ny, nz)
+    n_nodes = nx * ny * nz
+    cff = solid.addObject('ConstantForceField',
+                          name="MMS_forces",
+                          template="Vec3d",
+                          indices=list(range(n_nodes)),
+                          forces=[[0., 0., 0.]] * n_nodes)
 
-    all_idx    = " ".join(str(m) for m in range(len(nodes_pre)))
-    all_forces = " ".join(
-        f"{F[m,0]} {F[m,1]} {F[m,2]}" for m in range(len(nodes_pre))
-    )
-    solid.addObject('ConstantForceField',
-                    name="MMS_forces",
-                    template="Vec3d",
-                    indices=all_idx,
-                    forces=all_forces)
-
+    surf = solid.addChild('Surface')
+    quad_topo = surf.addObject('QuadSetTopologyContainer', name="surfTopo")
+    surf.addObject('QuadSetTopologyModifier')
+    surf.addObject('Hexa2QuadTopologicalMapping',
+                   input="@../topology",
+                   output="@surfTopo")
     if visual:
-        visu = solid.addChild('Visual')
-        visu.addObject('QuadSetTopologyContainer', name="quadTopo")
-        visu.addObject('QuadSetTopologyModifier')
-        visu.addObject('Hexa2QuadTopologicalMapping',
-                       input="@../topology",
-                       output="@quadTopo")
-        visu.addObject('OglModel',
+        surf.addObject('OglModel',
                        name="ogl",
-                       src="@quadTopo",
+                       src="@surfTopo",
                        color=[0.2, 0.6, 1.0, 0.9])
-        visu.addObject('IdentityMapping')
+        surf.addObject('IdentityMapping')
 
-    return dofs, nodes_pre
+    solid.addObject(MMSForceController(dofs, cff, quad_topo, E, nu, L,
+                                       name="MMSForceController"))
+
+    return dofs
 
  
 
@@ -263,8 +210,7 @@ def run_simulation_3d(L, E, nu, nx, ny, nz):
     root = Sofa.Core.Node("root")
     root.dt.value = 1.0
 
-    dofs, nodes_pre = build_scene_3d(root, L=L, E=E, nu=nu,
-                                     nx=nx, ny=ny, nz=nz, visual=False)
+    dofs = build_scene_3d(root, L=L, E=E, nu=nu, nx=nx, ny=ny, nz=nz, visual=False)
     Sofa.Simulation.init(root)
     pos_init  = dofs.position.array().copy()
     Sofa.Simulation.animate(root, root.dt.value)
@@ -274,7 +220,7 @@ def run_simulation_3d(L, E, nu, nx, ny, nz):
     ux = pos_final[:, 0] - pos_init[:, 0]
     uy = pos_final[:, 1] - pos_init[:, 1]
     uz = pos_final[:, 2] - pos_init[:, 2]
-    return nodes_pre, ux, uy, uz
+    return pos_init, ux, uy, uz
 
 def l2_error_3d(nodes, ux, uy, uz, L):
       
