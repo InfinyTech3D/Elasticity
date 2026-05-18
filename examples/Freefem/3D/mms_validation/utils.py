@@ -7,6 +7,7 @@ import Sofa.Core
 import Sofa.Simulation
 
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results_3d")
+SINUS_AMPLITUDE = 1e-1
  
 
 def load_params(path=None):
@@ -24,6 +25,22 @@ def lame(E, nu):
 
 def node_idx(i, j, k, nx, ny):
     return i + j * nx + k * nx * ny
+
+
+def _build_element_connectivity(nx, ny, nz):
+    i = np.arange(nx-1); j = np.arange(ny-1); k = np.arange(nz-1)
+    ii, jj, kk = np.meshgrid(i, j, k, indexing='ij')
+    ii, jj, kk = ii.ravel(), jj.ravel(), kk.ravel()
+    return np.column_stack([
+        ii   + jj*nx     + kk*nx*ny,
+        ii+1 + jj*nx     + kk*nx*ny,
+        ii+1 + (jj+1)*nx + kk*nx*ny,
+        ii   + (jj+1)*nx + kk*nx*ny,
+        ii   + jj*nx     + (kk+1)*nx*ny,
+        ii+1 + jj*nx     + (kk+1)*nx*ny,
+        ii+1 + (jj+1)*nx + (kk+1)*nx*ny,
+        ii   + (jj+1)*nx + (kk+1)*nx*ny,
+    ])  # (n_e, 8)
 
  
 def u_ex_linear(x, y, z, L):
@@ -43,9 +60,9 @@ def traction_linear(x, y, z, nx_c, ny_c, nz_c, E, nu, L):
  
 
 def u_ex_sinus_neumann(x, y, z, L):
-    return (np.sin(np.pi*x/L)*np.sin(np.pi*y/L),
-            np.sin(np.pi*y/L)*np.sin(np.pi*z/L),
-            np.sin(np.pi*z/L)*np.sin(np.pi*x/L))
+    return (SINUS_AMPLITUDE * np.sin(np.pi*x/L)*np.sin(np.pi*y/L),
+            SINUS_AMPLITUDE * np.sin(np.pi*y/L)*np.sin(np.pi*z/L),
+            SINUS_AMPLITUDE * np.sin(np.pi*z/L)*np.sin(np.pi*x/L))
 
 def _sn_dux_dx(x,y,z,L): return (np.pi/L)*np.cos(np.pi*x/L)*np.sin(np.pi*y/L)
 def _sn_dux_dy(x,y,z,L): return (np.pi/L)*np.sin(np.pi*x/L)*np.cos(np.pi*y/L)
@@ -64,7 +81,7 @@ def stress_sinus(x, y, z, E, nu, L):
     exz = 0.5*(_sn_dux_dz(x,y,z,L) + _sn_duz_dx(x,y,z,L))
     eyz = 0.5*(_sn_duy_dz(x,y,z,L) + _sn_duz_dy(x,y,z,L))
     tr  = exx + eyy + ezz
-    return np.array([
+    return SINUS_AMPLITUDE * np.array([
         [lam*tr+2*mu*exx, 2*mu*exy,        2*mu*exz       ],
         [2*mu*exy,        lam*tr+2*mu*eyy, 2*mu*eyz       ],
         [2*mu*exz,        2*mu*eyz,        lam*tr+2*mu*ezz],
@@ -85,15 +102,15 @@ def body_force_sinus(x, y, z, E, nu, L):
     d_divu_dx = p**2 * (-sx*sy + cz*cx)
     d_divu_dy = p**2 * ( cx*cy - sy*sz)
     d_divu_dz = p**2 * ( cy*cz - sz*sx)
-    fx = -(lam+mu)*d_divu_dx - mu*lap_ux
-    fy = -(lam+mu)*d_divu_dy - mu*lap_uy
-    fz = -(lam+mu)*d_divu_dz - mu*lap_uz
+    fx = SINUS_AMPLITUDE * (-(lam+mu)*d_divu_dx - mu*lap_ux)
+    fy = SINUS_AMPLITUDE * (-(lam+mu)*d_divu_dy - mu*lap_uy)
+    fz = SINUS_AMPLITUDE * (-(lam+mu)*d_divu_dz - mu*lap_uz)
     return fx, fy, fz
 
  
 
 def u_ex_sinus_dirichlet(x, y, z, L):
-    val = np.sin(np.pi*x/L)*np.sin(np.pi*y/L)*np.sin(np.pi*z/L)
+    val = SINUS_AMPLITUDE * np.sin(np.pi*x/L)*np.sin(np.pi*y/L)*np.sin(np.pi*z/L)
     return val, val, val
 
 def _sd_dx(x,y,z,L): return (np.pi/L)*np.cos(np.pi*x/L)*np.sin(np.pi*y/L)*np.sin(np.pi*z/L)
@@ -110,10 +127,10 @@ def body_force_sinus_dirichlet(x, y, z, E, nu, L):
     d_divu_dx = p**2*(-sx*sy*sz + cx*cy*sz + cx*sy*cz)
     d_divu_dy = p**2*( cx*cy*sz - sx*sy*sz + sx*cy*cz)
     d_divu_dz = p**2*( cx*sy*cz + sx*cy*cz - sx*sy*sz)
-    fx = -(lam+mu)*d_divu_dx - mu*lap_s3
-    fy = -(lam+mu)*d_divu_dy - mu*lap_s3
-    fz = -(lam+mu)*d_divu_dz - mu*lap_s3
-    return fx, fy, fz 
+    fx = SINUS_AMPLITUDE * (-(lam+mu)*d_divu_dx - mu*lap_s3)
+    fy = SINUS_AMPLITUDE * (-(lam+mu)*d_divu_dy - mu*lap_s3)
+    fz = SINUS_AMPLITUDE * (-(lam+mu)*d_divu_dz - mu*lap_s3)
+    return fx, fy, fz
 
 def get_u_ex(mode):
     return {'linear_neumann':  u_ex_linear,
@@ -128,13 +145,16 @@ def get_derivatives(mode):
                 'duy_dx':zer,'duy_dy':one,'duy_dz':zer,
                 'duz_dx':zer,'duz_dy':zer,'duz_dz':one}
     elif mode == 'sinus_neumann':
-        return {'dux_dx':_sn_dux_dx,'dux_dy':_sn_dux_dy,'dux_dz':_sn_dux_dz,
-                'duy_dx':_sn_duy_dx,'duy_dy':_sn_duy_dy,'duy_dz':_sn_duy_dz,
-                'duz_dx':_sn_duz_dx,'duz_dy':_sn_duz_dy,'duz_dz':_sn_duz_dz}
+        def _s(fn): return lambda x,y,z,L,_f=fn: _f(x,y,z,L)*SINUS_AMPLITUDE
+        return {'dux_dx':_s(_sn_dux_dx),'dux_dy':_s(_sn_dux_dy),'dux_dz':_s(_sn_dux_dz),
+                'duy_dx':_s(_sn_duy_dx),'duy_dy':_s(_sn_duy_dy),'duy_dz':_s(_sn_duy_dz),
+                'duz_dx':_s(_sn_duz_dx),'duz_dy':_s(_sn_duz_dy),'duz_dz':_s(_sn_duz_dz)}
     else:  # sinus_dirichlet : ux=uy=uz=sin*sin*sin
-        return {'dux_dx':_sd_dx,'dux_dy':_sd_dy,'dux_dz':_sd_dz,
-                'duy_dx':_sd_dx,'duy_dy':_sd_dy,'duy_dz':_sd_dz,
-                'duz_dx':_sd_dx,'duz_dy':_sd_dy,'duz_dz':_sd_dz}
+        def _s(fn): return lambda x,y,z,L,_f=fn: _f(x,y,z,L)*SINUS_AMPLITUDE
+        sd = _s(_sd_dx); se = _s(_sd_dy); sf = _s(_sd_dz)
+        return {'dux_dx':sd,'dux_dy':se,'dux_dz':sf,
+                'duy_dx':sd,'duy_dy':se,'duy_dz':sf,
+                'duz_dx':sd,'duz_dy':se,'duz_dz':sf}
 
  
 
@@ -159,32 +179,64 @@ def _hexa_shape(xi, eta, zeta):
     ])
     return N, dN_dxi, dN_deta, dN_dzeta
 
- 
+
+# Precomputed shape functions and derivatives at all 8 Gauss points (2-point rule, gw=1)
+_GP = np.array([-1/np.sqrt(3), 1/np.sqrt(3)])
+_N_GP  = np.empty((8, 8))    # (n_gp, n_nodes)
+_dN_GP = np.empty((8, 3, 8)) # (n_gp, 3, n_nodes)
+for _g, (_xi, _eta, _zeta) in enumerate(
+        [(_xi, _eta, _zeta) for _xi in _GP for _eta in _GP for _zeta in _GP]):
+    _N, _dNxi, _dNeta, _dNzeta = _hexa_shape(_xi, _eta, _zeta)
+    _N_GP[_g]  = _N
+    _dN_GP[_g] = np.array([_dNxi, _dNeta, _dNzeta])
+
+
+def _batch_det3(J):
+    """Analytical determinant for a batch of (n, 3, 3) matrices."""
+    return (J[:,0,0] * (J[:,1,1]*J[:,2,2] - J[:,1,2]*J[:,2,1])
+          - J[:,0,1] * (J[:,1,0]*J[:,2,2] - J[:,1,2]*J[:,2,0])
+          + J[:,0,2] * (J[:,1,0]*J[:,2,1] - J[:,1,1]*J[:,2,0]))
+
+
+def _batch_detinv3(J):
+    """Analytical det and inverse for (n, 3, 3) matrices via cofactors."""
+    a=J[:,0,0]; b=J[:,0,1]; c=J[:,0,2]
+    d=J[:,1,0]; e=J[:,1,1]; f=J[:,1,2]
+    g=J[:,2,0]; h=J[:,2,1]; k=J[:,2,2]
+    c00=e*k-f*h;  c10=f*g-d*k;  c20=d*h-e*g
+    c01=c*h-b*k;  c11=a*k-c*g;  c21=b*g-a*h
+    c02=b*f-c*e;  c12=c*d-a*f;  c22=a*e-b*d
+    det = a*c00 + b*c10 + c*c20
+    s = 1.0 / det
+    Jinv = np.empty_like(J)
+    Jinv[:,0,0]=c00*s; Jinv[:,0,1]=c01*s; Jinv[:,0,2]=c02*s
+    Jinv[:,1,0]=c10*s; Jinv[:,1,1]=c11*s; Jinv[:,1,2]=c12*s
+    Jinv[:,2,0]=c20*s; Jinv[:,2,1]=c21*s; Jinv[:,2,2]=c22*s
+    return det, Jinv
+
 
 def compute_body_force_nodal(nodes, nx, ny, nz, E, nu, L, body_force_fn):
-    gp = np.array([-1/np.sqrt(3), 1/np.sqrt(3)])
-    gw = np.array([1.0, 1.0])
-    F  = np.zeros((len(nodes), 3))
-    for k in range(nz-1):
-        for j in range(ny-1):
-            for i in range(nx-1):
-                idx = np.array([
-                    node_idx(i,  j,  k,  nx,ny), node_idx(i+1,j,  k,  nx,ny),
-                    node_idx(i+1,j+1,k,  nx,ny), node_idx(i,  j+1,k,  nx,ny),
-                    node_idx(i,  j,  k+1,nx,ny), node_idx(i+1,j,  k+1,nx,ny),
-                    node_idx(i+1,j+1,k+1,nx,ny), node_idx(i,  j+1,k+1,nx,ny),
-                ])
-                xe = nodes[idx]
-                for gi, xi in enumerate(gp):
-                    for gj, eta in enumerate(gp):
-                        for gk, zeta in enumerate(gp):
-                            N,dNx,dNe,dNz = _hexa_shape(xi, eta, zeta)
-                            J    = np.array([dNx@xe, dNe@xe, dNz@xe])
-                            detJ = np.linalg.det(J)
-                            xg   = N @ xe
-                            fx,fy,fz = body_force_fn(xg[0],xg[1],xg[2],E,nu,L)
-                            w = gw[gi]*gw[gj]*gw[gk]*abs(detJ)
-                            F[idx] += np.outer(N, np.array([fx,fy,fz])) * w
+    all_idx = _build_element_connectivity(nx, ny, nz)  # (n_e, 8)
+    xe_all  = nodes[all_idx]                            # (n_e, 8, 3)
+    F = np.zeros((len(nodes), 3))
+
+    for g in range(8):
+        J_all    = _dN_GP[g] @ xe_all                            # (n_e, 3, 3)
+        detJ_all = _batch_det3(J_all)                            # (n_e,)
+        xg_all   = xe_all.transpose(0, 2, 1) @ _N_GP[g]         # (n_e, 3)
+
+        fx, fy, fz = body_force_fn(xg_all[:,0], xg_all[:,1], xg_all[:,2], E, nu, L)
+        f_all  = np.stack([fx, fy, fz], axis=1)                  # (n_e, 3)
+        w_all  = np.abs(detJ_all)                                 # gw=1 for all points
+
+        # contrib[e, local_node, d] = N_g[local_node] * f_all[e,d] * w_all[e]
+        contrib = (_N_GP[g][np.newaxis, :, np.newaxis]
+                   * f_all[:, np.newaxis, :]
+                   * w_all[:, np.newaxis, np.newaxis])            # (n_e, 8, 3)
+        for d in range(3):
+            F[:, d] += np.bincount(all_idx.ravel(),
+                                   weights=contrib[:, :, d].ravel(),
+                                   minlength=len(nodes))
     return F
 
  
@@ -239,27 +291,17 @@ class MMSForceController(Sofa.Core.Controller):
         mode           = self.mode
 
         if mode == 'linear_neumann':
-            
             F = compute_surface_traction_nodal(
                     nodes, quads, E, nu, L, traction_linear)
-
-        
-             
-        if mode == 'sinus_neumann':
+        elif mode == 'sinus_neumann':
             F_body = compute_body_force_nodal(nodes, nx, ny, nz, E, nu, L, body_force_sinus)
             F_surf = compute_surface_traction_nodal(nodes, quads, E, nu, L, traction_sinus)
-            
-        
             print(f"  [body] résidu global F_body : {np.abs(F_body.sum(axis=0))}")
             print(f"  [total] résidu F_body+F_surf : {np.abs((F_body + F_surf).sum(axis=0))}")
-            
             F = F_body + F_surf
-
         elif mode == 'sinus_dirichlet':
-            
             F = compute_body_force_nodal(
                     nodes, nx, ny, nz, E, nu, L, body_force_sinus_dirichlet)
-
         else:
             raise ValueError(f"Unknown: {mode}")
 
@@ -281,6 +323,10 @@ def build_scene_3d(rootNode, L=1.0, E=1e6, nu=0.3, nx=6, ny=6, nz=6,
         "Sofa.Component.Topology.Container.Dynamic",
         "Sofa.Component.Topology.Container.Grid",
         "Sofa.Component.Topology.Mapping",
+        "Sofa.Component.LinearSolver.Iterative",
+        "Sofa.Component.LinearSolver.Preconditioner",
+        "Sofa.Component.LinearSystem",
+        "Sofa.Component.Mapping.Linear"
     ]
     if visual:
         plugins += ["Sofa.Component.Visual","Sofa.GL.Component.Rendering3D"]
@@ -301,16 +347,19 @@ def build_scene_3d(rootNode, L=1.0, E=1e6, nu=0.3, nx=6, ny=6, nz=6,
 
     solid = rootNode.addChild('Solid3D')
     solid.addObject('NewtonRaphsonSolver', name="newtonSolver",
-                    printLog=False, warnWhenLineSearchFails=True,
-                    maxNbIterationsNewton=1, maxNbIterationsLineSearch=1,
-                    lineSearchCoefficient=1,
-                    relativeSuccessiveStoppingThreshold=0,
-                    absoluteResidualStoppingThreshold=1e-7,
-                    absoluteEstimateDifferenceThreshold=1e-12,
-                    relativeInitialStoppingThreshold=1e-12,
-                    relativeEstimateDifferenceThreshold=0)
-    solid.addObject('SparseLDLSolver', name="linearSolver",
-                    template="CompressedRowSparseMatrixd")
+                    printLog=False, warnWhenLineSearchFails=True
+                    , maxNbIterationsNewton=2
+                    , relativeSuccessiveStoppingThreshold=0
+                    , absoluteResidualStoppingThreshold=0
+                    , absoluteEstimateDifferenceThreshold=0
+                    , relativeInitialStoppingThreshold=0
+                    , relativeEstimateDifferenceThreshold=0)
+    solid.addObject("MatrixLinearSystem", name="ssorSystem", template="CompressedRowSparseMatrixd")
+    solid.addObject("SSORPreconditioner", name="preconditioner", printLog=False)
+    solid.addObject("PreconditionedMatrixFreeSystem", name="solverSystem", template="GraphScattered", preconditionerSystem="@ssorSystem")
+    solid.addObject("PCGLinearSolver", name="linearSolver", template="GraphScattered"
+        , iterations=3000, tolerance=1e-15, preconditioner="@preconditioner", printLog=True)
+    #solid.addObject('SparseLDLSolver', name="linearSolver", template="CompressedRowSparseMatrixd")
     solid.addObject('StaticSolver', name="staticSolver",
                     newtonSolver="@newtonSolver", linearSolver="@linearSolver")
     solid.addObject('HexahedronSetTopologyContainer', name="topology",
@@ -400,43 +449,40 @@ def l2_error_3d(nodes, ux, uy, uz, L, mode):
 
 def h1_error_3d(nodes, ux, uy, uz, L, nx, ny, nz, mode):
     x, y, z = nodes[:,0], nodes[:,1], nodes[:,2]
-    u_ex = get_u_ex(mode)
-    ex_x, ex_y, ex_z = u_ex(x, y, z, L)
-    
-    
+    u_ex_fn = get_u_ex(mode)
+    ex_x, ex_y, ex_z = u_ex_fn(x, y, z, L)
+
     h = L / (nx - 1)
-    vol_node = h**3  
-    err_u2 = np.sum((ux-ex_x)**2 + (uy-ex_y)**2 + (uz-ex_z)**2) * vol_node
-    
-    
-    UX = ux.reshape(nz, ny, nx)
-    UY = uy.reshape(nz, ny, nx)
-    UZ = uz.reshape(nz, ny, nx)
-    gUX = np.gradient(UX, h, h, h) 
-    gUY = np.gradient(UY, h, h, h)
-    gUZ = np.gradient(UZ, h, h, h)
-    
-    
+    err_u2 = np.sum((ux-ex_x)**2 + (uy-ex_y)**2 + (uz-ex_z)**2) * h**3
+
     d = get_derivatives(mode)
-    gex_ux = [d['dux_dz'](x,y,z,L).reshape(nz,ny,nx),
-              d['dux_dy'](x,y,z,L).reshape(nz,ny,nx),
-              d['dux_dx'](x,y,z,L).reshape(nz,ny,nx)]
-    gex_uy = [d['duy_dz'](x,y,z,L).reshape(nz,ny,nx),
-              d['duy_dy'](x,y,z,L).reshape(nz,ny,nx),
-              d['duy_dx'](x,y,z,L).reshape(nz,ny,nx)]
-    gex_uz = [d['duz_dz'](x,y,z,L).reshape(nz,ny,nx),
-              d['duz_dy'](x,y,z,L).reshape(nz,ny,nx),
-              d['duz_dx'](x,y,z,L).reshape(nz,ny,nx)]
-    
-    
+    all_idx = _build_element_connectivity(nx, ny, nz)  # (n_e, 8)
+    xe_all  = nodes[all_idx]                            # (n_e, 8, 3)
+    ue_all  = np.column_stack([ux, uy, uz])[all_idx]   # (n_e, 8, 3)
+
     err_grad2 = 0.0
-    for i in range(3):
-        err_grad2 += np.sum((gUX[i]-gex_ux[i])**2)
-        err_grad2 += np.sum((gUY[i]-gex_uy[i])**2)
-        err_grad2 += np.sum((gUZ[i]-gex_uz[i])**2)
-    err_grad2 *= vol_node
-    
-    
+    for g in range(8):
+        J_all              = _dN_GP[g] @ xe_all                   # (n_e, 3, 3)
+        detJ_all, Jinv_all = _batch_detinv3(J_all)                # (n_e,), (n_e, 3, 3)
+
+        # dN_phys_all[e,i,j] = ∂N_j/∂x_i
+        dN_phys_all = Jinv_all @ _dN_GP[g]                        # (n_e, 3, 8)
+        # grad_uh_all[e,i,j] = ∂u_j/∂x_i
+        grad_uh_all = dN_phys_all @ ue_all                        # (n_e, 3, 3)
+
+        xg_all = xe_all.transpose(0, 2, 1) @ _N_GP[g]            # (n_e, 3)
+        xg0, xg1, xg2 = xg_all[:,0], xg_all[:,1], xg_all[:,2]
+
+        # build (3,3,n_e) then transpose to (n_e,3,3)
+        grad_uex_all = np.array([
+            [d['dux_dx'](xg0,xg1,xg2,L), d['duy_dx'](xg0,xg1,xg2,L), d['duz_dx'](xg0,xg1,xg2,L)],
+            [d['dux_dy'](xg0,xg1,xg2,L), d['duy_dy'](xg0,xg1,xg2,L), d['duz_dy'](xg0,xg1,xg2,L)],
+            [d['dux_dz'](xg0,xg1,xg2,L), d['duy_dz'](xg0,xg1,xg2,L), d['duz_dz'](xg0,xg1,xg2,L)],
+        ]).transpose(2, 0, 1)  # (n_e, 3, 3)
+
+        err_e = np.sum((grad_uh_all - grad_uex_all)**2, axis=(1, 2))  # (n_e,)
+        err_grad2 += np.dot(err_e, np.abs(detJ_all))                  # gw=1
+
     return np.sqrt(err_u2 + err_grad2)
 
 def plot_convergence(hs, l2s, h1s, mode, out_dir=None):
@@ -583,10 +629,16 @@ def run_convergence_study(mode, nx_list=None, L=1.0, E=1e6, nu=0.3, out_dir=None
         hs.append(h)
         l2s.append(l2_err)
         h1s.append(h1_err)
-        
-        
-        
-        
+
+        if len(hs) == 1:
+            print(f"  L2 error: {l2_err:.6e}")
+            print(f"  H1 error: {h1_err:.6e}")
+        else:
+            l2_rate = np.log(l2s[-2]/l2s[-1]) / np.log(hs[-2]/hs[-1])
+            h1_rate = np.log(h1s[-2]/h1s[-1]) / np.log(hs[-2]/hs[-1])
+            print(f"  L2 error: {l2_err:.6e}  (rate {l2_rate:.2f})")
+            print(f"  H1 error: {h1_err:.6e}  (rate {h1_rate:.2f})")
+
         if nx == nx_list[-1]:
             plot_displacement(nodes, ux, uy, uz, L, nx, ny, nz, mode, out_dir)
 

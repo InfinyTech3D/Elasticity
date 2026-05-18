@@ -2,12 +2,12 @@
     "length": 1.0,
     "youngModulus": 1e6,
     "RatioPoisson": 0.3,
-    "nx": 6,
-    "ny": 6,
-    "nz": 6,
+    "nx": 5,
+    "ny": 5,
+    "nz": 5,
     "nxConvergence": {
-        "linear_neumann":    [3, 4, 6, 8, 11, 16],
-        "sinus_neumann":     [3, 4, 6, 8, 11, 16],
-        "sinus_dirichlet":   [3, 4, 6, 8, 11, 16]
+        "linear_neumann":    [5, 15, 26, 36, 46, 56, 66, 76, 86],
+        "sinus_neumann":     [5, 15, 26, 36, 46, 56, 66, 76, 86],
+        "sinus_dirichlet":   [5, 15, 26, 36, 46, 56, 66, 76, 86]
     }
 }

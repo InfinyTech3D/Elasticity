@@ -48,12 +48,18 @@ if __name__ == "__main__":
         l2_err = l2_error_3d(nodes, ux, uy, uz, L, mode=MODE)
         h1_err = h1_error_3d(nodes, ux, uy, uz, L, nx, ny, nz, mode=MODE)
         
-        print(f"  L2 error: {l2_err:.6e}")
-        print(f"  H1 error: {h1_err:.6e}")
-        
         hs.append(h)
         l2s.append(l2_err)
         h1s.append(h1_err)
+
+        if len(hs) == 1:
+            print(f"  L2 error: {l2_err:.6e}")
+            print(f"  H1 error: {h1_err:.6e}")
+        else:
+            l2_rate = np.log(l2s[-2]/l2s[-1]) / np.log(hs[-2]/hs[-1])
+            h1_rate = np.log(h1s[-2]/h1s[-1]) / np.log(hs[-2]/hs[-1])
+            print(f"  L2 error: {l2_err:.6e}  (rate {l2_rate:.2f})")
+            print(f"  H1 error: {h1_err:.6e}  (rate {h1_rate:.2f})")
     
     
     plot_convergence(hs, l2s, h1s, mode=MODE)
