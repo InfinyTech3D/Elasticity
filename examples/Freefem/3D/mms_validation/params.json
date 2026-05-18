@@ -1,0 +1,13 @@
+{
+    "length": 1.0,
+    "youngModulus": 1e6,
+    "RatioPoisson": 0.3,
+    "nx": 6,
+    "ny": 6,
+    "nz": 6,
+    "nxConvergence": {
+        "linear_neumann":    [3, 4, 6, 8, 11, 16],
+        "sinus_neumann":     [3, 4, 6, 8, 11, 16],
+        "sinus_dirichlet":   [3, 4, 6, 8, 11, 16]
+    }
+}
