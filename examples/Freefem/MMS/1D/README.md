@@ -54,6 +54,10 @@ The rule is determined by the choice of $n_g$, $\xi_k$, and $w_k$:
 |------|--------|----------|--------|
 | 1-point (midpoint) | 1 | $0$ | $2$ |
 | 2-point | 2 | $\pm \frac{1}{\sqrt{3}}$ | $1$ |
+| 3-point | 3 | $0,\ \pm\sqrt{\frac{3}{5}}$ | $\frac{8}{9}\ (k=2),\quad \frac{5}{9}\ (k=1,3)$ |
+
+> **3-point rule:** $\xi_1 = -\sqrt{\tfrac{3}{5}},\ \xi_2 = 0,\ \xi_3 = \sqrt{\tfrac{3}{5}}$;
+> $w_1 = w_3 = \tfrac{5}{9},\ w_2 = \tfrac{8}{9}$
 
 ### Body Force
 
@@ -205,4 +209,49 @@ With a 2-point quadrature rule:
 
 $$
 F_0 = \frac{h}{6}\left[2f(x_0) + f(x_1)\right], \quad F_i = h\, f(x_i), \quad F_N = \frac{h}{6}\left[f(x_{N-1}) + 2f(x_N)\right]
+$$
+
+$$
+F_i^{(e)} = \frac{h}{2} \sum_{k=1}^{2} w_k\, f(x_k^{(e)})\, \phi_i(x_k^{(e)})
+$$
+
+---
+## Case 4: Exponential Function
+
+### Manufactured Solution
+
+
+$$u_{ex}(x) = e^x - 1$$
+
+### Source Term
+
+$$
+f(x)=−E exf(x) = -E\, e^xf(x)=−Eex
+$$
+
+### Boundary Conditions
+
+
+$$ 
+u(0)=0
+$$
+
+
+$$
+\left.\frac{du}{dx}\right|_{1} = e
+$$
+
+Neumann force:
+
+$$
+F_N = E\, e
+$$
+
+
+### Source Term Discretization
+
+With a 3-point quadrature rule:
+
+$$
+F_i^{(e)} = \frac{h}{2} \sum_{k=1}^{3} w_k\, f(x_k^{(e)})\, \phi_i(x_k^{(e)})
 $$
