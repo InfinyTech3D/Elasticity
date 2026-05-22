@@ -7,32 +7,33 @@ import Sofa.Core
 import Sofa.Simulation
 import SofaRuntime
 
-""" l'idee est de tester 3 cas de l'incompressibilite  en posant  rotation 
-une mms avec un div u(x,y) = 0, 
-3 cas seront tester dans ce script : 
-- cas I : rotation pure : ux = -y ;  u_y = x ====> cas non informatif 
--cas II : un champ Cisaille : u_x = y , u_y = 0; 
-- cas III : mms plus realistique : u_x = sin(pi*x)cos(pi*y);   u_y = -cos(pi* x)sin(pi*y)
-
 """
-#MMS_TYPE = "realistic"  # " rotation" , "cisaille", "realistic" 
-# l'ajouter apres avoir toutes les fonctions chacune de son cote 
+Incompressible ===> div u(x,y) = 0,
+MMS realistic : u_x = sin(pi*x)cos(pi*y);   u_y = -cos(pi*x)sin(pi*y)
+"""
 
-
-
-RESULTS_DIR = f"results_incompressible_q1p1"
+RESULTS_DIR = "results_incompressible_q1p1"
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
-
-
+# ===== Gauss points & weights =====
 GAUSS_PTS = np.array([-1.0 / np.sqrt(3), 1.0 / np.sqrt(3)])
 GAUSS_WTS = np.array([1.0, 1.0])
 
+# ===== Triangle Gauss rule  =====
+_TRI_BARY = np.array([
+    [2/3, 1/6, 1/6],
+    [1/6, 2/3, 1/6],
+    [1/6, 1/6, 2/3],
+])
 
-# ======= LAME coeff =========================
 
+# ======= Lamé coefficients =========================
 def lame(E, nu, dim="2d"):
-  
+    if dim == "3d" and np.isclose(nu, 0.5):
+        raise ValueError(
+            "nu=0.5 in plane strain ===> division by zero (strictly incompressible). "
+            "Use nu < 0.5 "
+        )
     if dim == "2d":
         lam = E * nu / (1 - nu**2)
     else:
@@ -41,9 +42,7 @@ def lame(E, nu, dim="2d"):
     return lam, mu
 
 
-# ==================== cas realistic =============================
-
-
+# ==================== MMS & derivatives ==========================
 def ux_mms_incomp(x, y, L):  return  np.sin(np.pi*x/L) * np.cos(np.pi*y/L)
 def uy_mms_incomp(x, y, L):  return -np.cos(np.pi*x/L) * np.sin(np.pi*y/L)
 
@@ -53,19 +52,17 @@ def duy_dx_incomp(x, y, L):  return  (np.pi/L)*np.sin(np.pi*x/L)*np.sin(np.pi*y/
 def duy_dy_incomp(x, y, L):  return -(np.pi/L)*np.cos(np.pi*x/L)*np.cos(np.pi*y/L)
 
 def fx_body_incomp(x, y, E, nu, L, dim="2d"):
-   
     return (np.pi**2 * E / (L**2 * (nu + 1))) * np.sin(np.pi*x/L) * np.cos(np.pi*y/L)
 
 def fy_body_incomp(x, y, E, nu, L, dim="2d"):
     return -(np.pi**2 * E / (L**2 * (nu + 1))) * np.sin(np.pi*y/L) * np.cos(np.pi*x/L)
 
 def sigma_xx_incomp(x, y, E, nu, L, dim="2d"):
-    lam, mu = lame(E, nu, dim)
-
+    _, mu = lame(E, nu, dim)
     return 2*mu * dux_dx_incomp(x, y, L)
 
 def sigma_yy_incomp(x, y, E, nu, L, dim="2d"):
-    lam, mu = lame(E, nu, dim)
+    _, mu = lame(E, nu, dim)
     return 2*mu * duy_dy_incomp(x, y, L)
 
 def sigma_xy_incomp(x, y, E, nu, L, dim="2d"):
@@ -78,8 +75,8 @@ def traction_incomp(x, y, nx_c, ny_c, E, nu, L, dim="2d"):
     sxy = sigma_xy_incomp(x, y, E, nu, L, dim)
     return sxx*nx_c + sxy*ny_c, sxy*nx_c + syy*ny_c
 
-# =================== Mesh ============================================
 
+# =================== Mesh ============================================
 def get_nodes_2d(L, nx, ny, dim="2d"):
     dx, dy = L / (nx - 1), L / (ny - 1)
     if dim == "3d":
@@ -91,33 +88,26 @@ def get_nodes_2d(L, nx, ny, dim="2d"):
 def _sofa_template(dim):
     return "Vec3d" if dim == "3d" else "Vec2d"
 
- 
-
 def _add_dirichlet(Beam, nodes_2d, L, dim, with_visual):
     tmpl = _sofa_template(dim)
     xy   = nodes_2d[:, :2]
     eps  = 1e-10
 
-    
     idx_corner = [k for k, (xk, yk) in enumerate(xy)
                   if xk < eps and yk < eps]
-
-    
-    idx_rot = [k for k, (xk, yk) in enumerate(xy)
-               if xk > L - eps and yk < eps]
+    idx_rot    = [k for k, (xk, yk) in enumerate(xy)
+                  if xk > L - eps and yk < eps]
 
     if dim == "2d":
         Beam.addObject("PartialFixedProjectiveConstraint",
                        name="fix_corner", template=tmpl,
                        indices=" ".join(map(str, idx_corner)),
                        fixedDirections="1 1")
-    
         Beam.addObject("PartialFixedProjectiveConstraint",
                        name="fix_rot", template=tmpl,
                        indices=" ".join(map(str, idx_rot)),
                        fixedDirections="0 1")
     else:
-        
         all_idx = " ".join(str(k) for k in range(len(nodes_2d)))
         Beam.addObject("PartialFixedProjectiveConstraint",
                        name="fix_corner", template=tmpl,
@@ -140,7 +130,8 @@ def _pack_forces(F_xy, dim, n_nodes):
         frc = " ".join(f"{F_xy[k,0]} {F_xy[k,1]}" for k in range(n_nodes))
     return idx, frc
 
- 
+
+# ========================   Q1 Quad element =============================================
 
 class _QuadElement:
     LABEL = "Q1 quad"
@@ -175,8 +166,7 @@ class _QuadElement:
 
     @staticmethod
     def compute_nodal_forces(nodes_2d, L, E, nu, nx, ny, dim="2d"):
-         
-        quads = _QuadElement.get_connectivity(nx, ny)
+        quads = _QuadElement.get_connectivity(nx, ny)  
         xy    = nodes_2d[:, :2]
         F     = np.zeros((len(xy), 2))
 
@@ -196,61 +186,28 @@ class _QuadElement:
                     for a, node in enumerate(quad):
                         F[node, 0] += N[a] * fx * w
                         F[node, 1] += N[a] * fy * w
- 
-        for j in range(ny - 1):
-            k0, k1 = j*nx, (j+1)*nx
-            x0,y0 = xy[k0]; x1,y1 = xy[k1]
-            Le = np.hypot(x1-x0, y1-y0)
-            for xi, wi in zip(GAUSS_PTS, GAUSS_WTS):
-                t = 0.5*(xi+1)
-                xg,yg = (1-t)*x0+t*x1, (1-t)*y0+t*y1
-                Tx,Ty = traction_incomp(xg,yg,-1.,0.,E,nu,L,dim)
-                N0,N1 = 0.5*(1-xi), 0.5*(1+xi)
-                w = wi*Le/2.
-                F[k0,0]+=N0*Tx*w; F[k0,1]+=N0*Ty*w
-                F[k1,0]+=N1*Tx*w; F[k1,1]+=N1*Ty*w
 
-        
-        for j in range(ny - 1):
-            k0 = j*nx+(nx-1); k1 = (j+1)*nx+(nx-1)
-            x0,y0 = xy[k0]; x1,y1 = xy[k1]
+    
+        def _edge_gauss(k0, k1, nx_c, ny_c):
+            x0, y0 = xy[k0]; x1, y1 = xy[k1]
             Le = np.hypot(x1-x0, y1-y0)
             for xi, wi in zip(GAUSS_PTS, GAUSS_WTS):
-                t = 0.5*(xi+1)
-                xg,yg = (1-t)*x0+t*x1, (1-t)*y0+t*y1
-                Tx,Ty = traction_incomp(xg,yg,+1.,0.,E,nu,L,dim)
-                N0,N1 = 0.5*(1-xi), 0.5*(1+xi)
-                w = wi*Le/2.
-                F[k0,0]+=N0*Tx*w; F[k0,1]+=N0*Ty*w
-                F[k1,0]+=N1*Tx*w; F[k1,1]+=N1*Ty*w
+                t      = 0.5*(xi + 1)
+                xg, yg = (1-t)*x0 + t*x1, (1-t)*y0 + t*y1
+                Tx, Ty = traction_incomp(xg, yg, nx_c, ny_c, E, nu, L, dim)
+                N0, N1 = 0.5*(1-xi), 0.5*(1+xi)
+                w      = wi * Le / 2.0
+                F[k0, 0] += N0*Tx*w;  F[k0, 1] += N0*Ty*w
+                F[k1, 0] += N1*Tx*w;  F[k1, 1] += N1*Ty*w
 
-        
-        for i in range(nx - 1):
-            k0, k1 = i, i+1
-            x0,y0 = xy[k0]; x1,y1 = xy[k1]
-            Le = np.hypot(x1-x0, y1-y0)
-            for xi, wi in zip(GAUSS_PTS, GAUSS_WTS):
-                t = 0.5*(xi+1)
-                xg,yg = (1-t)*x0+t*x1, (1-t)*y0+t*y1
-                Tx,Ty = traction_incomp(xg,yg,0.,-1.,E,nu,L,dim)
-                N0,N1 = 0.5*(1-xi), 0.5*(1+xi)
-                w = wi*Le/2.
-                F[k0,0]+=N0*Tx*w; F[k0,1]+=N0*Ty*w
-                F[k1,0]+=N1*Tx*w; F[k1,1]+=N1*Ty*w
-
-        
-        for i in range(nx - 1):
-            k0 = (ny-1)*nx+i; k1 = (ny-1)*nx+i+1
-            x0,y0 = xy[k0]; x1,y1 = xy[k1]
-            Le = np.hypot(x1-x0, y1-y0)
-            for xi, wi in zip(GAUSS_PTS, GAUSS_WTS):
-                t = 0.5*(xi+1)
-                xg,yg = (1-t)*x0+t*x1, (1-t)*y0+t*y1
-                Tx,Ty = traction_incomp(xg,yg,0.,+1.,E,nu,L,dim)
-                N0,N1 = 0.5*(1-xi), 0.5*(1+xi)
-                w = wi*Le/2.
-                F[k0,0]+=N0*Tx*w; F[k0,1]+=N0*Ty*w
-                F[k1,0]+=N1*Tx*w; F[k1,1]+=N1*Ty*w
+        for j in range(ny - 1):    # x=0
+            _edge_gauss(j*nx, (j+1)*nx, -1., 0.)
+        for j in range(ny - 1):    # x=L
+            _edge_gauss(j*nx+(nx-1), (j+1)*nx+(nx-1), +1., 0.)
+        for i in range(nx - 1):   #  y=0
+            _edge_gauss(i, i+1, 0., -1.)
+        for i in range(nx - 1):   # y=L
+            _edge_gauss((ny-1)*nx+i, (ny-1)*nx+i+1, 0., +1.)
 
         return F
 
@@ -271,10 +228,18 @@ class _QuadElement:
             rootNode.addObject("VisualStyle",
                                displayFlags="showBehaviorModels showForceFields")
 
-        nodes_2d  = get_nodes_2d(L, nx, ny, dim=dim)
-        quads_np  = _QuadElement.get_connectivity(nx, ny)
+        nodes_2d = get_nodes_2d(L, nx, ny, dim=dim)
+        quads_np = _QuadElement.get_connectivity(nx, ny)
+        
+    # ========== SOFA solvers ======================
+
 
         Beam = rootNode.addChild("Beam")
+        Beam.addObject('NewtonRaphsonSolver',
+                  name="newtonSolver",
+                  maxNbIterationsNewton=10,
+                  absoluteResidualStoppingThreshold=1e-10,
+                  printLog=False)
         Beam.addObject("StaticSolver", name="staticSolver", printLog=False)
         Beam.addObject("SparseLDLSolver", name="linearSolver",
                        template="CompressedRowSparseMatrixd")
@@ -309,8 +274,8 @@ class _QuadElement:
                     detJ = np.linalg.det(J)
                     xg, yg = N@xe, N@ye
                     err2 += (
-                        (N@ux[quad] - ux_mms_incomp(xg,yg,L))**2
-                      + (N@uy[quad] - uy_mms_incomp(xg,yg,L))**2
+                        (N@ux[quad] - ux_mms_incomp(xg, yg, L))**2
+                      + (N@uy[quad] - uy_mms_incomp(xg, yg, L))**2
                     ) * wi * wj * detJ
         return np.sqrt(err2)
 
@@ -330,13 +295,16 @@ class _QuadElement:
                     dN_dx = Jinv[0,0]*dN_dxi + Jinv[1,0]*dN_deta
                     dN_dy = Jinv[0,1]*dN_dxi + Jinv[1,1]*dN_deta
                     err2 += (
-                        (dN_dx@ux[quad] - dux_dx_incomp(xg,yg,L))**2 +
-                        (dN_dy@ux[quad] - dux_dy_incomp(xg,yg,L))**2 +
-                        (dN_dx@uy[quad] - duy_dx_incomp(xg,yg,L))**2 +
-                        (dN_dy@uy[quad] - duy_dy_incomp(xg,yg,L))**2
+                        (dN_dx@ux[quad] - dux_dx_incomp(xg, yg, L))**2 +
+                        (dN_dy@ux[quad] - dux_dy_incomp(xg, yg, L))**2 +
+                        (dN_dx@uy[quad] - duy_dx_incomp(xg, yg, L))**2 +
+                        (dN_dy@uy[quad] - duy_dy_incomp(xg, yg, L))**2
                     ) * wi * wj * detJ
         return np.sqrt(err2)
- 
+
+
+
+# ====================  P1 Triangle element ==========================
 
 class _TriElement:
     LABEL = "P1 tri"
@@ -358,50 +326,53 @@ class _TriElement:
         return conn
 
     @staticmethod
+    def _grad_p1(xy, u, tri):
+        i0, i1, i2 = tri
+        x0,y0 = xy[i0];  x1,y1 = xy[i1];  x2,y2 = xy[i2]
+        A2   = (x1-x0)*(y2-y0) - (x2-x0)*(y1-y0)
+        dudx = (u[i0]*(y1-y2) + u[i1]*(y2-y0) + u[i2]*(y0-y1)) / A2
+        dudy = (u[i0]*(x2-x1) + u[i1]*(x0-x2) + u[i2]*(x1-x0)) / A2
+        return dudx, dudy, abs(A2) / 2.0
+
+    @staticmethod
     def compute_nodal_forces(nodes_2d, L, E, nu, nx, ny, dim="2d"):
-       
-        dx, dy = L / (nx - 1), L / (ny - 1)
-        xy = nodes_2d[:, :2]
-        F  = np.zeros((len(xy), 2))
-
-    
-        for k, (xk, yk) in enumerate(xy):
-            i  = round(xk / dx)
-            j  = round(yk / dy)
-            wx = dx/2 if (i == 0 or i == nx-1) else dx
-            wy = dy/2 if (j == 0 or j == ny-1) else dy
-            F[k, 0] += fx_body_incomp(xk, yk, E, nu, L, dim) * wx * wy
-            F[k, 1] += fy_body_incomp(xk, yk, E, nu, L, dim) * wx * wy
+        tris = _TriElement.get_connectivity(nx, ny)
+        xy   = nodes_2d[:, :2]
+        F    = np.zeros((len(xy), 2))
  
-        for j in range(ny):
-            k = j * nx
-            xk, yk = xy[k]
-            wy = dy/2 if (j == 0 or j == ny-1) else dy
-            Tx, Ty = traction_incomp(xk, yk, -1., 0., E, nu, L, dim)
-            F[k, 0] += Tx * wy;  F[k, 1] += Ty * wy
-
-        for j in range(ny):
-            k = j * nx + (nx - 1)
-            xk, yk = xy[k]
-            wy = dy/2 if (j == 0 or j == ny-1) else dy
-            Tx, Ty = traction_incomp(xk, yk, +1., 0., E, nu, L, dim)
-            F[k, 0] += Tx * wy;  F[k, 1] += Ty * wy
+        for tri in tris:
+            i0, i1, i2 = tri
+            x0,y0 = xy[i0]; x1,y1 = xy[i1]; x2,y2 = xy[i2]
+            xc   = (x0 + x1 + x2) / 3.0
+            yc   = (y0 + y1 + y2) / 3.0
+            area = abs((x1-x0)*(y2-y0) - (x2-x0)*(y1-y0)) / 2.0
+            fx   = fx_body_incomp(xc, yc, E, nu, L, dim)
+            fy   = fy_body_incomp(xc, yc, E, nu, L, dim)
+            for node in [i0, i1, i2]:
+                F[node, 0] += fx * area / 3.0
+                F[node, 1] += fy * area / 3.0
 
         
-        for i in range(nx):
-            k = i
-            xk, yk = xy[k]
-            wx = dx/2 if (i == 0 or i == nx-1) else dx
-            Tx, Ty = traction_incomp(xk, yk, 0., -1., E, nu, L, dim)
-            F[k, 0] += Tx * wx;  F[k, 1] += Ty * wx
+        def _edge_gauss(k0, k1, nx_c, ny_c):
+            x0, y0 = xy[k0]; x1, y1 = xy[k1]
+            Le = np.hypot(x1-x0, y1-y0)
+            for xi, wi in zip(GAUSS_PTS, GAUSS_WTS):
+                t      = 0.5*(xi + 1)
+                xg, yg = (1-t)*x0 + t*x1, (1-t)*y0 + t*y1
+                Tx, Ty = traction_incomp(xg, yg, nx_c, ny_c, E, nu, L, dim)
+                N0, N1 = 0.5*(1-xi), 0.5*(1+xi)
+                w      = wi * Le / 2.0
+                F[k0, 0] += N0*Tx*w;  F[k0, 1] += N0*Ty*w
+                F[k1, 0] += N1*Tx*w;  F[k1, 1] += N1*Ty*w
 
-        
-        for i in range(nx):
-            k = (ny - 1) * nx + i
-            xk, yk = xy[k]
-            wx = dx/2 if (i == 0 or i == nx-1) else dx
-            Tx, Ty = traction_incomp(xk, yk, 0., +1., E, nu, L, dim)
-            F[k, 0] += Tx * wx;  F[k, 1] += Ty * wx
+        for j in range(ny - 1):  
+            _edge_gauss(j*nx, (j+1)*nx, -1., 0.)
+        for j in range(ny - 1):  
+            _edge_gauss(j*nx+(nx-1), (j+1)*nx+(nx-1), +1., 0.)
+        for i in range(nx - 1):  
+            _edge_gauss(i, i+1, 0., -1.)
+        for i in range(nx - 1):   
+            _edge_gauss((ny-1)*nx+i, (ny-1)*nx+i+1, 0., +1.)
 
         return F
 
@@ -448,29 +419,25 @@ class _TriElement:
         return dofs, nodes_2d, tris_np
 
     @staticmethod
-    def _grad_p1(xy, u, tri):
-        i0, i1, i2 = tri
-        x0,y0 = xy[i0];  x1,y1 = xy[i1];  x2,y2 = xy[i2]
-        A2   = (x1-x0)*(y2-y0) - (x2-x0)*(y1-y0)
-        dudx = (u[i0]*(y1-y2) + u[i1]*(y2-y0) + u[i2]*(y0-y1)) / A2
-        dudy = (u[i0]*(x2-x1) + u[i1]*(x0-x2) + u[i2]*(x1-x0)) / A2
-        return dudx, dudy, abs(A2) / 2.0
-
-    @staticmethod
     def compute_l2(nodes_2d, ux, uy, L, nx, ny, conn):
+        
         xy   = nodes_2d[:, :2]
         err2 = 0.0
         for tri in conn:
             i0, i1, i2 = tri
-            xc = (xy[i0,0] + xy[i1,0] + xy[i2,0]) / 3.0
-            yc = (xy[i0,1] + xy[i1,1] + xy[i2,1]) / 3.0
-            ux_c = (ux[i0] + ux[i1] + ux[i2]) / 3.0
-            uy_c = (uy[i0] + uy[i1] + uy[i2]) / 3.0
+            xy_e = xy[[i0, i1, i2]]        
+            ux_e = ux[[i0, i1, i2]]        
+            uy_e = uy[[i0, i1, i2]]        
             _, _, area = _TriElement._grad_p1(xy, ux, tri)
-            err2 += (
-                (ux_c - ux_mms_incomp(xc, yc, L))**2
-              + (uy_c - uy_mms_incomp(xc, yc, L))**2
-            ) * area
+            for lam in _TRI_BARY:        
+                xg  = lam @ xy_e[:, 0]
+                yg  = lam @ xy_e[:, 1]
+                uxg = lam @ ux_e           
+                uyg = lam @ uy_e
+                err2 += (
+                    (uxg - ux_mms_incomp(xg, yg, L))**2
+                  + (uyg - uy_mms_incomp(xg, yg, L))**2
+                ) * area / 3.0            
         return np.sqrt(err2)
 
     @staticmethod
@@ -491,6 +458,8 @@ class _TriElement:
             ) * area
         return np.sqrt(err2)
 
+ 
+# ============================== SIMU=======================================
 
 def run_simulation(elem, L, E, nu, nx, ny, dim="2d"):
     root = Sofa.Core.Node("root")
@@ -541,7 +510,7 @@ def simulation_ponctuelle(elem, L, E, nu, nx, ny, dim="2d", results_dir=RESULTS_
         ax.set_xlabel("x"); ax.set_ylabel(lbl)
         ax.legend(); ax.grid(True, alpha=0.3)
     plt.suptitle(
-        f"MMS {"incompressible".upper()} — {elem.LABEL} [{dim}/{hyp}]  nu={nu}  nx={nx}"
+        f"MMS INCOMPRESSIBLE — {elem.LABEL} [{dim}/{hyp}]  nu={nu}  nx={nx}"
         f"  |L2={l2:.2e}  H1={h1:.2e}"
     )
     plt.tight_layout()
@@ -554,12 +523,12 @@ def simulation_ponctuelle(elem, L, E, nu, nx, ny, dim="2d", results_dir=RESULTS_
     x, y = xy[:, 0], xy[:, 1]
     fig, axes = plt.subplots(2, 3, figsize=(15, 8))
     for ax, data, title, cmap in [
-        (axes[0,0], ux,                r"$u_x$ SOFA",           "gray"),
-        (axes[0,1], ux_ref,            r"$u_x$ MMS",            "gray"),
-        (axes[0,2], np.abs(ux-ux_ref), r"$|u_x-u_x^{MMS}|$",   "gray_r"),
-        (axes[1,0], uy,                r"$u_y$ SOFA",           "gray"),
-        (axes[1,1], uy_ref,            r"$u_y$ MMS",            "gray"),
-        (axes[1,2], np.abs(uy-uy_ref), r"$|u_y-u_y^{MMS}|$",   "gray_r"),
+        (axes[0,0], ux,                r"$u_x$ SOFA",          "gray"),
+        (axes[0,1], ux_ref,            r"$u_x$ MMS",           "gray"),
+        (axes[0,2], np.abs(ux-ux_ref), r"$|u_x-u_x^{MMS}|$",  "gray_r"),
+        (axes[1,0], uy,                r"$u_y$ SOFA",          "gray"),
+        (axes[1,1], uy_ref,            r"$u_y$ MMS",           "gray"),
+        (axes[1,2], np.abs(uy-uy_ref), r"$|u_y-u_y^{MMS}|$",  "gray_r"),
     ]:
         tc = ax.tricontourf(x, y, tris_plot.tolist(), data, levels=20, cmap=cmap)
         ax.triplot(x, y, tris_plot.tolist(), "k-", lw=0.3, alpha=0.4)
@@ -567,7 +536,7 @@ def simulation_ponctuelle(elem, L, E, nu, nx, ny, dim="2d", results_dir=RESULTS_
         ax.set_title(title); ax.set_aspect("equal")
         ax.set_xlabel("x"); ax.set_ylabel("y")
     plt.suptitle(
-        f"Champs 2D — {elem.LABEL} [{dim}/{hyp}]  {"incompressible".upper()}  nu={nu}  nx={nx}"
+        f"Champs 2D — {elem.LABEL} [{dim}/{hyp}]  INCOMPRESSIBLE  nu={nu}  nx={nx}"
     )
     plt.tight_layout()
     plt.savefig(os.path.join(results_dir,
@@ -595,9 +564,9 @@ def convergence_study(elem_specs, L, E, nu, nx_values, dim="2d", results_dir=RES
         txt_path = os.path.join(results_dir,
                                 f"convergence_{tag}_{dim}_nu{nu}.txt")
 
-        print(f"\n── Convergence {label} [{dim}/{hyp}] {"incomp".upper()} nu={nu} ──\n{hdr}")
+        print(f"\n── Convergence {label} [{dim}/{hyp}] INCOMP nu={nu} ──\n{hdr}")
         with open(txt_path, "w", encoding="utf-8") as f:
-            f.write(f"Convergence MMS {"incompressible".upper()} — {label} [{dim}/{hyp}]  nu={nu}\n{hdr}\n")
+            f.write(f"Convergence MMS INCOMPRESSIBLE — {label} [{dim}/{hyp}]  nu={nu}\n{hdr}\n")
             for k, nx in enumerate(nx_values):
                 ny = nx
                 h  = L / (nx - 1)
@@ -617,9 +586,9 @@ def convergence_study(elem_specs, L, E, nu, nx_values, dim="2d", results_dir=RES
         hs_a = np.array(hs); l2_a = np.array(errs_l2); h1_a = np.array(errs_h1)
         kw = dict(lw=2, ms=7, color=color)
         ax_l2.loglog(hs_a, l2_a, f"{marker}-",
-                     label=f"{label} [{dim}] {"incompressible".upper()} nu={nu}", **kw)
+                     label=f"{label} [{dim}] INCOMPRESSIBLE nu={nu}", **kw)
         ax_h1.loglog(hs_a, h1_a, f"{marker}--",
-                     label=f"{label} [{dim}] {"incompressible".upper()} nu={nu}", **kw)
+                     label=f"{label} [{dim}] INCOMPRESSIBLE nu={nu}", **kw)
         hs_last, l2_last, h1_last = hs_a, l2_a, h1_a
 
     if hs_last is not None:
@@ -631,9 +600,9 @@ def convergence_study(elem_specs, L, E, nu, nx_values, dim="2d", results_dir=RES
 
     for ax, ylabel, title in [
         (ax_l2, "L2 error",
-         f"Convergence L2 — MMS {"incompressible".upper()} [{dim}/{hyp}]"),
+         f"Convergence L2 — MMS INCOMPRESSIBLE [{dim}/{hyp}]"),
         (ax_h1, "H1 semi-norm",
-         f"Convergence H1 — MMS {"incompressible".upper()} [{dim}/{hyp}]"),
+         f"Convergence H1 — MMS INCOMPRESSIBLE [{dim}/{hyp}]"),
     ]:
         ax.set_xlabel("h"); ax.set_ylabel(ylabel); ax.set_title(title)
         ax.legend(); ax.grid(True, alpha=0.3, which="both")
@@ -646,6 +615,7 @@ def convergence_study(elem_specs, L, E, nu, nx_values, dim="2d", results_dir=RES
     plt.close(fig_l2); plt.close(fig_h1)
 
 
+# ============================ Main  ========================================= 
 if __name__ == "__main__":
     L  = 1.0
     E  = 1e6
@@ -667,7 +637,7 @@ if __name__ == "__main__":
         convergence_study(specs, L, E, nu, nx_values, dim=DIM)
 
     DIM = "3d"
-    for nu in [0.0, 0.3, 0.49, 0.50]:
+    for nu in [0.0, 0.3, 0.49, 0.4999]:   
         print(f"\n  nu = {nu}  [{DIM}]")
         simulation_ponctuelle(element_quad, L, E, nu, nx=20, ny=20, dim=DIM)
         simulation_ponctuelle(element_tri,  L, E, nu, nx=20, ny=20, dim=DIM)
