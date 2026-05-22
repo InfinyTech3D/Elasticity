@@ -15,6 +15,8 @@ _GAUSS_LEGENDRE_1D = {
         np.array([2.0])),
     2: (np.array([-1.0 / np.sqrt(3.0), 1.0 / np.sqrt(3.0)]),
         np.array([1.0, 1.0])),
+    3: (np.array([-np.sqrt(3.0 / 5.0), 0.0, np.sqrt(3.0 / 5.0)]),
+        np.array([5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0])),
 }
 
 

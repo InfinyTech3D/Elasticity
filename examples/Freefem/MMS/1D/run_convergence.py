@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from quadratic  import mms as quadratic_mms
 from cubic      import mms as cubic_mms
 from sinusoidal import mms as sinusoidal_mms
+from exponential import mms as exponential_mms 
 
 from bar import (
     RESULTS_DIR,
@@ -112,5 +113,5 @@ def run(mms, L, E, nx_list):
 if __name__ == "__main__":
     cfg  = load_params()
     L, E = cfg["length"], cfg["youngModulus"]
-    for mms in (quadratic_mms, cubic_mms, sinusoidal_mms):
+    for mms in (quadratic_mms, cubic_mms, sinusoidal_mms, exponential_mms):
         run(mms, L, E, cfg["nxConvergence"][mms.name])
