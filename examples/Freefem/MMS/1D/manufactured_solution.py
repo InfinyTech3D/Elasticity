@@ -4,9 +4,9 @@ from abc import ABC, abstractmethod
 
 
 class MMSCase1D(ABC):
-    name       = None  # case identifier (must match the params.json key)
-    plot_label = None  # LaTeX label for the exact solution
-    quadrature = None  # quadrature rule for body-force assembly and L2 error
+    name              = None  # case identifier (must match the params.json key)
+    plot_label        = None  # LaTeX label for the exact solution
+    source_quadrature = None  # quadrature rule for body-force assembly only
 
     @abstractmethod
     def u_ex(self, xi):

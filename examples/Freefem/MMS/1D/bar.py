@@ -16,6 +16,8 @@ from fem import (
     assemble_nodal_forces,
     l2_error,
     h1_semi_error,
+    L2_QUADRATURE,
+    H1_QUADRATURE,
 )
 from bar_solution import BarSolution1D
 
@@ -30,26 +32,41 @@ def load_params(path=None):
     if path is None:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "params.json")
     with open(path) as f:
-        return json.load(f)
+        cfg = json.load(f)
+    # Non-dimensional effective Young's modulus on x ∈ [0,1]: E_eff = E / L.
+    cfg["E_eff"] = cfg["youngModulus"] / cfg["length"]
+    return cfg
 
 
 # ---------------------------------------------------------------------------
 # SOFA runner
 # ---------------------------------------------------------------------------
 
+class BodyForceAssembler(Sofa.Core.Controller):
+    """Fill the BodyForce field after init from nodes/edges read off the topology."""
+
+    def __init__(self, dofs, topology, body_force, f_body, quadrature, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dofs       = dofs
+        self.topology   = topology
+        self.body_force = body_force
+        self.f_body     = f_body
+        self.quadrature = quadrature
+
+    def onSimulationInitDoneEvent(self, event):
+        nodes = self.dofs.rest_position.array().copy().flatten()
+        edges = self.topology.edges.array().copy()
+        nodal_forces = assemble_nodal_forces(self.f_body, nodes, edges, self.quadrature)
+        with self.body_force.forces.writeableArray() as forces:
+            forces[:, 0] = nodal_forces
+
+
 def build_bar_scene(root, mms, E_eff, nx):
     """Populate root with a static 1D bar scene on the non-dimensional domain [0,1].
 
-    Assembles the body force from `mms.source` using `mms.quadrature` and
-    applies the canonical BCs: Dirichlet at x=0, Neumann `mms.traction_bc(E_eff)` at x=1.
-
-    Returns the dofs MechanicalObject.
+    BodyForce is assembled after init by BodyForceAssembler. BCs: Dirichlet at
+    x=0, Neumann `mms.traction_bc(E_eff)` at x=1.
     """
-    nodes        = np.linspace(0, 1, nx)
-    edge_pairs   = [(i, i + 1) for i in range(nx - 1)]
-    nodal_forces = assemble_nodal_forces(lambda xi: mms.source(xi, E_eff),
-                                         nodes, edge_pairs, mms.quadrature)
-
     root.addObject('RequiredPlugin', pluginName=[
         "Elasticity",
         "Sofa.Component.Constraint.Projective",
@@ -100,10 +117,18 @@ def build_bar_scene(root, mms, E_eff, nx):
                   youngModulus=E_eff,
                   topology="@topology")
 
-    Bar.addObject('ConstantForceField',
-                  name="BodyForce",
-                  indices=list(range(nx)),
-                  forces=nodal_forces)
+    body_force = Bar.addObject('ConstantForceField',
+                               name="BodyForce",
+                               indices=list(range(nx)),
+                               forces=[[0.0]] * nx)
+
+    Bar.addObject(BodyForceAssembler(
+        dofs=dofs,
+        topology=Bar.topology,
+        body_force=body_force,
+        f_body=lambda xi: mms.source(xi, E_eff),
+        quadrature=mms.source_quadrature,
+        name="bodyForceAssembler"))
 
     Bar.addObject('FixedProjectiveConstraint', indices=0)
     Bar.addObject('ConstantForceField',
@@ -111,22 +136,26 @@ def build_bar_scene(root, mms, E_eff, nx):
                   indices=nx - 1,
                   forces=mms.traction_bc(E_eff))
 
-    return dofs
+
+def case_scene(mms):
+    """Return a `createScene(rootNode)` bound to this MMS case."""
+    def createScene(rootNode):
+        cfg = load_params()
+        build_bar_scene(rootNode, mms, cfg["E_eff"], cfg["nx"])
+        return rootNode
+    return createScene
 
 
 def solve_bar(mms, E_eff, nx):
-    """Build, run one static step, and return a BarSolution1D snapshot.
-
-    Handles the SOFA scene lifecycle (init, animate, unload) internally.
-    """
+    """Build, run one static step, and return a BarSolution1D snapshot."""
     root = Sofa.Core.Node("root")
     build_bar_scene(root, mms, E_eff, nx)
     Sofa.Simulation.init(root)
     Sofa.Simulation.animate(root, root.dt.value)
-    Bar    = root.Bar
-    x0     = Bar.dofs.rest_position.array().copy().flatten()
-    edges  = Bar.topology.edges.array().copy()
-    u_h    = Bar.dofs.position.array().copy().flatten() - x0
+    Bar   = root.Bar
+    x0    = Bar.dofs.rest_position.array().copy().flatten()
+    edges = Bar.topology.edges.array().copy()
+    u_h   = Bar.dofs.position.array().copy().flatten() - x0
     Sofa.Simulation.unload(root)
     return BarSolution1D(x0=x0, edges=edges, u_h=u_h)
 
@@ -179,12 +208,11 @@ def plot_solution(case, x, u_h, u_ex, label_ex):
 # Single-case driver
 # ---------------------------------------------------------------------------
 
-def run_scene(mms):
+def run_reference_scene(mms):
     """Solve one MMS case at the reference mesh, write the solution table and plot."""
-    cfg  = load_params()
-    L, E = cfg["length"], cfg["youngModulus"]
-    sol  = solve_bar(mms, E / L, cfg["nx"])
-    l2   = l2_error(sol.x0, sol.edges, sol.u_h, mms.u_ex, mms.quadrature)
-    h1   = h1_semi_error(sol.x0, sol.edges, sol.u_h, mms.du_ex, line_quadrature(2))
+    cfg = load_params()
+    sol = solve_bar(mms, cfg["E_eff"], cfg["nx"])
+    l2  = l2_error(sol.x0, sol.edges, sol.u_h, mms.u_ex, L2_QUADRATURE)
+    h1  = h1_semi_error(sol.x0, sol.edges, sol.u_h, mms.du_ex, H1_QUADRATURE)
     write_solution_table(mms.name, sol.x0, sol.u_h, mms.u_ex, {"L2": l2, "H1_semi": h1})
     plot_solution(mms.name, sol.x0, sol.u_h, mms.u_ex, mms.plot_label)

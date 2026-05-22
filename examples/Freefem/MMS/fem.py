@@ -15,8 +15,6 @@ _GAUSS_LEGENDRE_1D = {
         np.array([2.0])),
     2: (np.array([-1.0 / np.sqrt(3.0), 1.0 / np.sqrt(3.0)]),
         np.array([1.0, 1.0])),
-    3: (np.array([-np.sqrt(3.0 / 5.0), 0.0, np.sqrt(3.0 / 5.0)]),
-        np.array([5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0])),
 }
 
 
@@ -34,6 +32,12 @@ def line_quadrature(n_pts):
         x_k = 0.5 * (x1 + x2) + 0.5 * h * xi
         return 0.5 * h * sum(w_i * g(x_i) for w_i, x_i in zip(w, x_k))
     return rule
+
+
+# Error-norm rules. H1 requires >=2 pts: the P1 gradient superconverges at
+# the element midpoint, so 1-pt fakes O(h^2) instead of O(h).
+L2_QUADRATURE = line_quadrature(2)
+H1_QUADRATURE = line_quadrature(2)
 
 
 # ---------------------------------------------------------------------------

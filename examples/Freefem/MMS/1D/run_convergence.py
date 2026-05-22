@@ -12,10 +12,11 @@ from exponential import mms as exponential_mms
 from bar import (
     RESULTS_DIR,
     load_params,
-    line_quadrature,
     solve_bar,
     l2_error,
     h1_semi_error,
+    L2_QUADRATURE,
+    H1_QUADRATURE,
 )
 
 
@@ -103,15 +104,10 @@ def plot_convergence(case, hs, error_series):
     plt.close(fig)
 
 
-def run(mms, L, E, nx_list):
-    convergence_study(mms.name, nx_list,
-        run_fn    = lambda nx: solve_bar(mms, E / L, nx),
-        error_fns = {"L2":          lambda x, e, u: l2_error(x, e, u, mms.u_ex, mms.quadrature),
-                     "H1 seminorm": lambda x, e, u: h1_semi_error(x, e, u, mms.du_ex, line_quadrature(2))})
-
-
 if __name__ == "__main__":
-    cfg  = load_params()
-    L, E = cfg["length"], cfg["youngModulus"]
+    cfg = load_params()
     for mms in (quadratic_mms, cubic_mms, sinusoidal_mms, exponential_mms):
-        run(mms, L, E, cfg["nxConvergence"][mms.name])
+        convergence_study(mms.name, cfg["nxConvergence"][mms.name],
+            run_fn    = lambda nx: solve_bar(mms, cfg["E_eff"], nx),
+            error_fns = {"L2":          lambda x, e, u: l2_error(x, e, u, mms.u_ex, L2_QUADRATURE),
+                         "H1 seminorm": lambda x, e, u: h1_semi_error(x, e, u, mms.du_ex, H1_QUADRATURE)})

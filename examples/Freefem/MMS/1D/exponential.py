@@ -9,13 +9,13 @@ BC:
     u'(1)  = e     (Neumann)  =>  F_N = E·u'(1) = E·e
 """
 from manufactured_solution import MMSCase1D
-from bar import load_params, line_quadrature, build_bar_scene, run_scene
+from bar import line_quadrature, case_scene, run_reference_scene
 import numpy as np
 
 class Exponential(MMSCase1D):
-    name       = "exponential"
-    plot_label = r"$e^x - 1$"
-    quadrature = staticmethod(line_quadrature(3)) # using 3 pts quadrature 
+    name              = "exponential"
+    plot_label        = r"$e^x - 1$"
+    source_quadrature = staticmethod(line_quadrature(1))
 
     def u_ex(self, xi):
         return np.exp(xi) - 1.0
@@ -27,12 +27,7 @@ class Exponential(MMSCase1D):
         return -E * np.exp(xi)   # f = -E·u'' = -E·exp(x)
 
 mms = Exponential()
-
-def createScene(rootNode):
-    cfg  = load_params()
-    L, E = cfg["length"], cfg["youngModulus"]
-    build_bar_scene(rootNode, mms, E / L, cfg["nx"])
-    return rootNode
+createScene = case_scene(mms)
 
 if __name__ == "__main__":
-    run_scene(mms)
+    run_reference_scene(mms)

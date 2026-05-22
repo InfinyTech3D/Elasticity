@@ -7,23 +7,18 @@ Sinusoidal MMS (non-dimensional, x = x_dim/L ∈ [0,1], E = E_dim/L):
 BC:
     u(0)   = 0                       (Dirichlet)
     u'(1)  = 2π·cos(2π) = 2π         (Neumann)  =>  F_N = E·u'(1) = 2πE
-
-Note: f is transcendental so the 2-point Gauss rule is used for assembly.
-The H1 error must also be evaluated with the 2-point rule to correctly recover
-O(h^1) convergence — the element midpoint is a superconvergence point for the
-gradient of P1 elements, so the 1-point rule would artificially give O(h^2).
 """
 
 import numpy as np
 
 from manufactured_solution import MMSCase1D
-from bar import load_params, line_quadrature, build_bar_scene, run_scene
+from bar import line_quadrature, case_scene, run_reference_scene
 
 
 class Sinusoidal(MMSCase1D):
-    name       = "sinusoidal"
-    plot_label = r"$\sin(2\pi x)$"
-    quadrature = staticmethod(line_quadrature(2))
+    name              = "sinusoidal"
+    plot_label        = r"$\sin(2\pi x)$"
+    source_quadrature = staticmethod(line_quadrature(1))
 
     def u_ex(self, xi):
         return np.sin(2.0 * np.pi * xi)
@@ -36,14 +31,8 @@ class Sinusoidal(MMSCase1D):
 
 
 mms = Sinusoidal()
-
-
-def createScene(rootNode):
-    cfg  = load_params()
-    L, E = cfg["length"], cfg["youngModulus"]
-    build_bar_scene(rootNode, mms, E / L, cfg["nx"])
-    return rootNode
+createScene = case_scene(mms)
 
 
 if __name__ == "__main__":
-    run_scene(mms)
+    run_reference_scene(mms)

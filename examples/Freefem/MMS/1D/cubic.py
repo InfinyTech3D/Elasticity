@@ -10,13 +10,13 @@ BC:
 """
 
 from manufactured_solution import MMSCase1D
-from bar import load_params, line_quadrature, build_bar_scene, run_scene
+from bar import line_quadrature, case_scene, run_reference_scene
 
 
 class Cubic(MMSCase1D):
-    name       = "cubic"
-    plot_label = r"$x^2(1-x)$"
-    quadrature = staticmethod(line_quadrature(2))
+    name              = "cubic"
+    plot_label        = r"$x^2(1-x)$"
+    source_quadrature = staticmethod(line_quadrature(1))
 
     def u_ex(self, xi):
         return xi**2 * (1.0 - xi)
@@ -29,14 +29,8 @@ class Cubic(MMSCase1D):
 
 
 mms = Cubic()
-
-
-def createScene(rootNode):
-    cfg  = load_params()
-    L, E = cfg["length"], cfg["youngModulus"]
-    build_bar_scene(rootNode, mms, E / L, cfg["nx"])
-    return rootNode
+createScene = case_scene(mms)
 
 
 if __name__ == "__main__":
-    run_scene(mms)
+    run_reference_scene(mms)
