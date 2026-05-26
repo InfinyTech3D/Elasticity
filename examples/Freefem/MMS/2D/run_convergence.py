@@ -8,8 +8,9 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-from cubic         import mms as cubic_mms
-from trigonometric import mms as trig_mms
+from cubic          import mms as cubic_mms
+from trigonometric  import mms as trig_mms
+from incompressible import mms as incomp_mms
 
 from beam import (
     RESULTS_DIR,
@@ -137,7 +138,7 @@ if __name__ == "__main__":
     ]
 
     # dim="2d" → Vec2d / plane stress;  dim="3d" → Vec3d / plane strain
-    for mms in (cubic_mms, trig_mms):
+    for mms in (cubic_mms, trig_mms, incomp_mms):
         nx_vals = conv["nx_values"][mms.name]
         print(f"\n══ {mms.name} ══")
         for DIM in conv["dim_values"]:

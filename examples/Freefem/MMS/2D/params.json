@@ -7,11 +7,12 @@
         "dim": "2d"
     },
     "convergence": {
-        "nu_values":  [0.0, 0.3, 0.49],
+        "nu_values":  [0.0, 0.3, 0.49, 0.4999],
         "dim_values": ["2d", "3d"],
         "nx_values": {
-            "cubic":         [10, 20, 30, 40, 50],
-            "trigonometric": [10, 20, 30, 40, 50]
+            "cubic":          [10, 20, 30, 40, 50],
+            "trigonometric":  [10, 20, 30, 40, 50],
+            "incompressible": [10, 20, 30, 40, 50]
         }
     }
 }
