@@ -5,9 +5,7 @@ plots into the shared `results/` directory. Mirrors the 2D driver minus the
 plane-stress / plane-strain `dim` axis (3D has a single constitutive branch).
 """
 
-import os
 import numpy as np
-import matplotlib.pyplot as plt
 
 from sinus_neumann import mms as sinus_neumann_mms
 
@@ -17,7 +15,7 @@ from solid import (
     solve_solid,
     element_hex,
 )
-from plot_utils import annotate_convergence_rates
+from output import write_convergence_table, plot_convergence
 
 
 def convergence_study(elem_specs, mms, L, E, nu, nx_values):
@@ -59,7 +57,7 @@ def convergence_study(elem_specs, mms, L, E, nu, nx_values):
                          "H1": h1, "rate_H1": rate_h1})
             hs.append(h); l2s.append(l2); h1s.append(h1)
 
-        write_convergence_table(stem, rows)
+        write_convergence_table(stem, rows, RESULTS_DIR)
         plot_series.append({"label": f"{label} L²",
                             "errors": l2s, "style": spec["l2_style"]})
         plot_series.append({"label": f"{label} H¹",
@@ -68,55 +66,7 @@ def convergence_study(elem_specs, mms, L, E, nu, nx_values):
 
     title = f"Convergence — {mms.name}  nu={nu}"
     plot_convergence(f"convergence_{mms.name}_nu{nu}",
-                     hs_ref, plot_series, title=title)
-
-
-def write_convergence_table(stem, rows):
-    """
-    Write convergence table to results/<stem>.txt.
-
-    rows : list of dicts with keys 'nx', 'h', and one key per error column.
-           Rate columns are strings (empty for the first row).
-    """
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    path = os.path.join(RESULTS_DIR, f"{stem}.txt")
-    err_keys = [k for k in rows[0] if k not in ("nx", "h")]
-    header   = f"{'nx':>6} | {'h':>10}" + "".join(f" | {k:>16}" for k in err_keys)
-    with open(path, "w") as f:
-        f.write(header + "\n")
-        f.write("-" * len(header) + "\n")
-        for row in rows:
-            line = f"{row['nx']:6d} | {row['h']:10.4f}"
-            for k in err_keys:
-                v = row[k]
-                line += f" | {v:16.6e}" if isinstance(v, float) else f" | {v:>16}"
-            f.write(line + "\n")
-
-
-def plot_convergence(stem, hs, series, title, ylabel="Error"):
-    """
-    Save log-log convergence plot to results/<stem>.png.
-
-    series : list of {"label", "errors", "style"?} dicts
-    Per-segment convergence rates are annotated above each line segment.
-    """
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    h_arr   = np.array(hs)
-    default = ["bo-", "rs--", "g^:", "m^-"]
-    fig, ax = plt.subplots(figsize=(8, 5))
-    for i, s in enumerate(series):
-        style = s.get("style", default[i % len(default)])
-        e_arr = np.array(s["errors"])
-        ax.loglog(h_arr, e_arr, style, label=s["label"], linewidth=2, markersize=7)
-        annotate_convergence_rates(ax, h_arr, e_arr)
-    ax.set_xlabel("h")
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    ax.legend()
-    ax.grid(True, alpha=0.3, which="both")
-    fig.tight_layout()
-    fig.savefig(os.path.join(RESULTS_DIR, f"{stem}.png"), dpi=150)
-    plt.close(fig)
+                     hs_ref, plot_series, title=title, results_dir=RESULTS_DIR)
 
 
 if __name__ == "__main__":
