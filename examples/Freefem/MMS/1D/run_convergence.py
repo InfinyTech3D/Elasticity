@@ -87,35 +87,22 @@ def write_convergence_table(stem, rows):
             f.write(line + "\n")
 
 
-def plot_convergence(stem, hs, series, title, ylabel="Error", ref_lines=None):
+def plot_convergence(stem, hs, series, title, ylabel="Error"):
     """
     Save log-log convergence plot to results/<stem>.png.
 
-    series    : list of {"label", "errors", "style"?} dicts
-    ref_lines : optional list of {"slope", "anchor", "label"?} dicts;
-                "anchor" names the series whose first point anchors the line.
+    series : list of {"label", "errors", "style"?} dicts
     Per-segment convergence rates are annotated above each line segment.
     """
     os.makedirs(RESULTS_DIR, exist_ok=True)
     h_arr   = np.array(hs)
     default = ["bo-", "rs--", "g^:", "m^-"]
     fig, ax = plt.subplots(figsize=(8, 5))
-    anchors = {}
     for i, s in enumerate(series):
         style = s.get("style", default[i % len(default)])
         e_arr = np.array(s["errors"])
         ax.loglog(h_arr, e_arr, style, label=s["label"], linewidth=2, markersize=7)
         annotate_convergence_rates(ax, h_arr, e_arr)
-        anchors[s["label"]] = e_arr
-    for rl in (ref_lines or []):
-        anchor = anchors.get(rl["anchor"])
-        if anchor is None:
-            continue
-        slope = rl["slope"]
-        label = rl.get("label", f"O(h^{slope})")
-        h_ref = np.array([h_arr[0], h_arr[-1]])
-        ax.loglog(h_ref, anchor[0] * (h_ref / h_arr[0])**slope, ":",
-                  color="gray", lw=1.2, label=label)
     ax.set_xlabel("h")
     ax.set_ylabel(ylabel)
     ax.set_title(title)

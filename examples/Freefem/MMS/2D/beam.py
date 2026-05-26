@@ -52,40 +52,6 @@ def _dim_template(dim):
     return "Vec3d" if dim == "3d" else "Vec2d"
 
 
-def _add_dirichlet(Beam, nodes_2d, L, dim, with_visual):
-    """Partial Dirichlet: ux=0 on x-faces, uy=0 on y-faces (and z=0 in 3d)."""
-    tmpl = _dim_template(dim)
-    xy   = nodes_2d[:, :2]
-    eps  = 1e-10
-
-    idx_ux0 = [k for k, (xk, _) in enumerate(xy) if xk < eps or xk > L - eps]
-    idx_uy0 = [k for k, (_, yk) in enumerate(xy) if yk < eps or yk > L - eps]
-
-    if dim == "2d":
-        Beam.addObject("PartialFixedProjectiveConstraint",
-                       name="fix_ux", template=tmpl,
-                       indices=" ".join(map(str, idx_ux0)),
-                       fixedDirections="1 0")
-        Beam.addObject("PartialFixedProjectiveConstraint",
-                       name="fix_uy", template=tmpl,
-                       indices=" ".join(map(str, idx_uy0)),
-                       fixedDirections="0 1")
-    else:
-        all_idx = " ".join(map(str, range(len(nodes_2d))))
-        Beam.addObject("PartialFixedProjectiveConstraint",
-                       name="fix_ux", template=tmpl,
-                       indices=" ".join(map(str, idx_ux0)),
-                       fixedDirections="1 0 0")
-        Beam.addObject("PartialFixedProjectiveConstraint",
-                       name="fix_uy", template=tmpl,
-                       indices=" ".join(map(str, idx_uy0)),
-                       fixedDirections="0 1 0")
-        Beam.addObject("PartialFixedProjectiveConstraint",
-                       name="fix_z", template=tmpl,
-                       indices=all_idx,
-                       fixedDirections="0 0 1")
-
-
 def _boundary_edges(nx, ny):
     """Return (bottom, top, left, right) edge lists for a structured nx×ny grid."""
     bottom = [(i, i + 1)                                    for i in range(nx - 1)]
@@ -300,7 +266,7 @@ def build_beam_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
     Beam.addObject("LinearSmallStrainFEMForceField", name="FEM", template=tmpl,
                    youngModulus=E, poissonRatio=nu, topology="@topology")
 
-    _add_dirichlet(Beam, nodes_2d, L, dim, with_visual)
+    mms.apply_bcs(Beam, nodes_2d, L, dim)
 
     # Placeholder force field filled in by the controller after init.
     n_nodes = len(nodes_2d)

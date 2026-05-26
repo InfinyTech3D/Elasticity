@@ -70,14 +70,9 @@ def convergence_study(elem_specs, mms, L, E, nu, nx_values, dim="2d"):
                             "errors": h1s, "style": spec["h1_style"]})
         hs_ref = hs
 
-    first_label = elem_specs[0]["label"]
-    ref_lines = [
-        {"slope": 2, "anchor": f"{first_label} L²", "label": "O(h²)"},
-        {"slope": 1, "anchor": f"{first_label} H¹", "label": "O(h¹)"},
-    ]
     title = f"Convergence — {mms.name} [{dim} / {hyp}]  nu={nu}"
     plot_convergence(f"convergence_{mms.name}_{dim}_nu{nu}",
-                     hs_ref, plot_series, title=title, ref_lines=ref_lines)
+                     hs_ref, plot_series, title=title)
 
 
 def write_convergence_table(stem, rows):
@@ -102,35 +97,22 @@ def write_convergence_table(stem, rows):
             f.write(line + "\n")
 
 
-def plot_convergence(stem, hs, series, title, ylabel="Error", ref_lines=None):
+def plot_convergence(stem, hs, series, title, ylabel="Error"):
     """
     Save log-log convergence plot to results/<stem>.png.
 
-    series    : list of {"label", "errors", "style"?} dicts
-    ref_lines : optional list of {"slope", "anchor", "label"?} dicts;
-                "anchor" names the series whose first point anchors the line.
+    series : list of {"label", "errors", "style"?} dicts
     Per-segment convergence rates are annotated above each line segment.
     """
     os.makedirs(RESULTS_DIR, exist_ok=True)
     h_arr   = np.array(hs)
     default = ["bo-", "rs--", "g^:", "m^-"]
     fig, ax = plt.subplots(figsize=(8, 5))
-    anchors = {}
     for i, s in enumerate(series):
         style = s.get("style", default[i % len(default)])
         e_arr = np.array(s["errors"])
         ax.loglog(h_arr, e_arr, style, label=s["label"], linewidth=2, markersize=7)
         annotate_convergence_rates(ax, h_arr, e_arr)
-        anchors[s["label"]] = e_arr
-    for rl in (ref_lines or []):
-        anchor = anchors.get(rl["anchor"])
-        if anchor is None:
-            continue
-        slope = rl["slope"]
-        label = rl.get("label", f"O(h^{slope})")
-        h_ref = np.array([h_arr[0], h_arr[-1]])
-        ax.loglog(h_ref, anchor[0] * (h_ref / h_arr[0])**slope, ":",
-                  color="gray", lw=1.2, label=label)
     ax.set_xlabel("h")
     ax.set_ylabel(ylabel)
     ax.set_title(title)

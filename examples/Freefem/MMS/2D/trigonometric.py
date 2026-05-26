@@ -32,6 +32,37 @@ class Trigonometric(MMSCase2D):
         return np.array([[dux_dx, dux_dy],
                          [duy_dx, duy_dy]])
 
+    def apply_bcs(self, Beam, nodes_2d, L, dim):
+        tmpl = "Vec3d" if dim == "3d" else "Vec2d"
+        xy   = nodes_2d[:, :2]
+        eps  = 1e-10
+        idx_ux0 = [k for k, (xk, _) in enumerate(xy) if xk < eps or xk > L - eps]
+        idx_uy0 = [k for k, (_, yk) in enumerate(xy) if yk < eps or yk > L - eps]
+
+        if dim == "2d":
+            Beam.addObject("PartialFixedProjectiveConstraint",
+                           name="fix_ux", template=tmpl,
+                           indices=" ".join(map(str, idx_ux0)),
+                           fixedDirections="1 0")
+            Beam.addObject("PartialFixedProjectiveConstraint",
+                           name="fix_uy", template=tmpl,
+                           indices=" ".join(map(str, idx_uy0)),
+                           fixedDirections="0 1")
+        else:
+            all_idx = " ".join(map(str, range(len(nodes_2d))))
+            Beam.addObject("PartialFixedProjectiveConstraint",
+                           name="fix_ux", template=tmpl,
+                           indices=" ".join(map(str, idx_ux0)),
+                           fixedDirections="1 0 0")
+            Beam.addObject("PartialFixedProjectiveConstraint",
+                           name="fix_uy", template=tmpl,
+                           indices=" ".join(map(str, idx_uy0)),
+                           fixedDirections="0 1 0")
+            Beam.addObject("PartialFixedProjectiveConstraint",
+                           name="fix_z", template=tmpl,
+                           indices=all_idx,
+                           fixedDirections="0 0 1")
+
     def source(self, x, y, E, nu, L, dim):
         lam, mu = lame(E, nu, dim)
         k  = np.pi / L

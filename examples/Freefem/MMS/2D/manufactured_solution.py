@@ -39,6 +39,16 @@ class MMSCase2D(ABC):
             "2d" → plane stress, "3d" → plane strain.
         """
 
+    @abstractmethod
+    def apply_bcs(self, Beam, nodes_2d, L, dim):
+        """Install Dirichlet BCs (and any case-specific constraints) on `Beam`.
+
+        The MMS author chooses the BC pattern matching the manufactured
+        solution. Neumann tractions on the four edges are already assembled
+        into the consistent nodal force by the framework (via `self.traction`);
+        this method only needs to add SOFA constraint objects.
+        """
+
     def traction(self, x, y, nx, ny, E, nu, L, dim):
         """Traction on a face with outward unit normal (nx, ny): returns (Tx, Ty).
 

@@ -130,11 +130,7 @@ def build_bar_scene(root, mms, E_eff, nx):
         quadrature=mms.source_quadrature,
         name="bodyForceAssembler"))
 
-    Bar.addObject('FixedProjectiveConstraint', indices=0)
-    Bar.addObject('ConstantForceField',
-                  name="NeumannTip",
-                  indices=nx - 1,
-                  forces=mms.traction_bc(E_eff))
+    mms.apply_bcs(Bar, E_eff, nx)
 
 
 def case_scene(mms):
