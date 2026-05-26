@@ -22,17 +22,15 @@ topology container choice and the rules.
 import numpy as np
 
 from fem import (
-    assemble_nodal_forces_2d,
-    assemble_traction_2d,
-    l2_error_2d,
-    h1_semi_error_2d,
-    assemble_nodal_forces_3d,
-    assemble_traction_3d,
-    l2_error_3d,
-    h1_semi_error_3d,
+    assemble_nodal_forces,
+    assemble_traction,
+    l2_error,
+    h1_semi_error,
     quad_q1_rule,
     tri_p1_rule,
     hex_q1_rule,
+    edge_line_rule,
+    quad_face_rule,
 )
 
 
@@ -54,7 +52,7 @@ def _boundary_quads(nx, ny, nz):
 
     Each quad is a 4-tuple of node indices using SOFA's regular-grid index
     convention `idx(i, j, k) = i + j*nx + k*nx*ny`. Orientation is consistent
-    per face but its sign does not affect `assemble_traction_3d`, which uses
+    per face but its sign does not affect `assemble_traction`, which uses
     |t_xi × t_eta| for the surface area and takes the outward normal from
     the caller.
     """
@@ -85,7 +83,7 @@ class _ElementBase2D:
     def compute_nodal_forces(cls, nodes_2d, conn, mms, L, E, nu, nx, ny, dim):
         xy = nodes_2d[:, :2]
 
-        F = assemble_nodal_forces_2d(
+        F = assemble_nodal_forces(
             lambda x, y: mms.source(x, y, E, nu, L, dim),
             xy, conn, cls._source_rule(mms))
 
@@ -94,24 +92,27 @@ class _ElementBase2D:
                  (top,    0.0, +1.0),
                  (left,  -1.0,  0.0),
                  (right, +1.0,  0.0)]
+        edge_rule = edge_line_rule(2)
         for edges, nrm_x, nrm_y in sides:
-            F += assemble_traction_2d(
+            F += assemble_traction(
                 lambda x, y, nx=nrm_x, ny=nrm_y:
                     mms.traction(x, y, nx, ny, E, nu, L, dim),
-                xy, edges)
+                xy, edges, edge_rule)
         return F
 
     @classmethod
     def compute_l2(cls, sol, mms, L):
-        return l2_error_2d(
-            sol.nodes, sol.conn, np.column_stack([sol.ux, sol.uy]),
+        xy = sol.nodes[:, :2]
+        return l2_error(
+            xy, sol.conn, np.column_stack([sol.ux, sol.uy]),
             lambda x, y: mms.u_ex(x, y, L),
             cls.ELEMENT_RULE)
 
     @classmethod
     def compute_h1(cls, sol, mms, L):
-        return h1_semi_error_2d(
-            sol.nodes, sol.conn, np.column_stack([sol.ux, sol.uy]),
+        xy = sol.nodes[:, :2]
+        return h1_semi_error(
+            xy, sol.conn, np.column_stack([sol.ux, sol.uy]),
             lambda x, y: mms.grad_u_ex(x, y, L),
             cls.ELEMENT_RULE)
 
@@ -187,7 +188,7 @@ class _ElementBase3D:
     def compute_nodal_forces(cls, nodes_3d, conn, mms, L, E, nu, nx, ny, nz):
         xyz = nodes_3d[:, :3]
 
-        F = assemble_nodal_forces_3d(
+        F = assemble_nodal_forces(
             lambda x, y, z: mms.source(x, y, z, E, nu, L),
             xyz, conn, cls._source_rule(mms))
 
@@ -198,16 +199,17 @@ class _ElementBase3D:
                  (yp,  0.0, +1.0, 0.0),
                  (zm,  0.0, 0.0, -1.0),
                  (zp,  0.0, 0.0, +1.0)]
+        face_rule = quad_face_rule(2)
         for quads, nrm_x, nrm_y, nrm_z in sides:
-            F += assemble_traction_3d(
+            F += assemble_traction(
                 lambda x, y, z, nx=nrm_x, ny=nrm_y, nz=nrm_z:
                     mms.traction(x, y, z, nx, ny, nz, E, nu, L),
-                xyz, quads)
+                xyz, quads, face_rule)
         return F
 
     @classmethod
     def compute_l2(cls, sol, mms, L):
-        return l2_error_3d(
+        return l2_error(
             sol.nodes, sol.conn,
             np.column_stack([sol.ux, sol.uy, sol.uz]),
             lambda x, y, z: mms.u_ex(x, y, z, L),
@@ -215,7 +217,7 @@ class _ElementBase3D:
 
     @classmethod
     def compute_h1(cls, sol, mms, L):
-        return h1_semi_error_3d(
+        return h1_semi_error(
             sol.nodes, sol.conn,
             np.column_stack([sol.ux, sol.uy, sol.uz]),
             lambda x, y, z: mms.grad_u_ex(x, y, z, L),
