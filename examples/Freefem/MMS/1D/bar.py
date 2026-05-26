@@ -21,6 +21,7 @@ from fem import (
 )
 from bar_solution import BarSolution1D
 from output import write_solution_table
+from scene import NodalForceAssembler
 
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
@@ -43,23 +44,13 @@ def load_params(path=None):
 # SOFA runner
 # ---------------------------------------------------------------------------
 
-class BodyForceAssembler(Sofa.Core.Controller):
-    """Fill the BodyForce field after init from nodes/edges read off the topology."""
-
-    def __init__(self, dofs, topology, body_force, f_body, quadrature, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dofs       = dofs
-        self.topology   = topology
-        self.body_force = body_force
-        self.f_body     = f_body
-        self.quadrature = quadrature
-
-    def onSimulationInitDoneEvent(self, event):
-        nodes = self.dofs.rest_position.array().copy().flatten()
-        edges = self.topology.edges.array().copy()
-        nodal_forces = assemble_nodal_forces_1d(self.f_body, nodes, edges, self.quadrature)
-        with self.body_force.forces.writeableArray() as forces:
-            forces[:, 0] = nodal_forces
+def _bar_force_compute(f_body, quadrature):
+    """Return a `(nodes, topology) -> (nx, 1) force array` for the assembler."""
+    def compute(nodes, topology):
+        flat  = nodes.copy().flatten()
+        edges = topology.edges.array().copy()
+        return assemble_nodal_forces_1d(f_body, flat, edges, quadrature).reshape(-1, 1)
+    return compute
 
 
 def build_bar_scene(root, mms, E_eff, nx):
@@ -123,12 +114,13 @@ def build_bar_scene(root, mms, E_eff, nx):
                                indices=list(range(nx)),
                                forces=[[0.0]] * nx)
 
-    Bar.addObject(BodyForceAssembler(
+    Bar.addObject(NodalForceAssembler(
         dofs=dofs,
         topology=Bar.topology,
-        body_force=body_force,
-        f_body=lambda xi: mms.source(xi, E_eff),
-        quadrature=mms.source_quadrature,
+        force_field=body_force,
+        compute_forces=_bar_force_compute(
+            f_body=lambda xi: mms.source(xi, E_eff),
+            quadrature=mms.source_quadrature),
         name="bodyForceAssembler"))
 
     mms.apply_bcs(Bar, E_eff, nx)

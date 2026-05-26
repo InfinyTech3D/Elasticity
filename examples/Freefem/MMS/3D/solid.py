@@ -20,6 +20,7 @@ from fem import (
 )
 from solid_solution import SolidSolution3D
 from output import write_solution_table
+from scene import NodalForceAssembler
 
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
@@ -158,39 +159,16 @@ class _HexElement(_ElementBase):
 
 
 # ---------------------------------------------------------------------------
-# Force assembly controller
-#
-# Same pattern as 2D: defer assembly to onSimulationInitDoneEvent so that
-# SOFA topology components (RegularGridTopology,
-# HexahedronSetTopologyContainer, ...) have been initialised and connectivity
-# can be read off the topology container.
-# ---------------------------------------------------------------------------
-
-class NodalForceAssembler(Sofa.Core.Controller):
-    def __init__(self, dofs, topology, force_field, element, mms,
-                 L, E, nu, nx, ny, nz, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dofs        = dofs
-        self.topology    = topology
-        self.force_field = force_field
-        self.element     = element
-        self.mms         = mms
-        self.L, self.E, self.nu     = L, E, nu
-        self.nx, self.ny, self.nz   = nx, ny, nz
-
-    def onSimulationInitDoneEvent(self, event):
-        nodes = self.dofs.rest_position.array().copy()
-        conn  = self.element.read_connectivity(self.topology)
-        F     = self.element.compute_nodal_forces(
-            nodes, conn, self.mms,
-            self.L, self.E, self.nu, self.nx, self.ny, self.nz)
-        with self.force_field.forces.writeableArray() as forces:
-            forces[:] = F
-
-
-# ---------------------------------------------------------------------------
 # SOFA scene
 # ---------------------------------------------------------------------------
+
+def _solid_force_compute(element, mms, L, E, nu, nx, ny, nz):
+    """Return a `(nodes, topology) -> (N, 3) force array` for NodalForceAssembler."""
+    def compute(nodes, topology):
+        conn = element.read_connectivity(topology)
+        return element.compute_nodal_forces(
+            nodes, conn, mms, L, E, nu, nx, ny, nz)
+    return compute
 
 def build_solid_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
                       nx=6, ny=6, nz=6, with_visual=True):
@@ -257,8 +235,7 @@ def build_solid_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
 
     Solid.addObject(NodalForceAssembler(
         dofs=dofs, topology=topology, force_field=force_field,
-        element=element, mms=mms,
-        L=L, E=E, nu=nu, nx=nx, ny=ny, nz=nz,
+        compute_forces=_solid_force_compute(element, mms, L, E, nu, nx, ny, nz),
         name="nodalForceAssembler"))
 
     return dofs, topology

@@ -21,6 +21,7 @@ from fem import (
 )
 from beam_solution import BeamSolution2D
 from output import write_solution_table
+from scene import NodalForceAssembler
 
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
@@ -179,47 +180,22 @@ class _TriElement(_ElementBase):
 
 
 # ---------------------------------------------------------------------------
-# Force assembly controller
-#
-# SOFA topology components (RegularGridTopology, QuadSetTopologyContainer,
-# Quad2TriangleTopologicalMapping, ...) are only populated after init runs,
-# not during Python scene-build time. This controller defers nodal-force
-# assembly to onSimulationInitDoneEvent, where it reads positions off the
-# MechanicalObject and connectivity off the SOFA topology, then fills the
-# ConstantForceField that was added with placeholder zeros.
-#
-# Mirrors the 1D pattern in `bar.py:BodyForceAssembler`.
-# ---------------------------------------------------------------------------
-
-class NodalForceAssembler(Sofa.Core.Controller):
-    def __init__(self, dofs, topology, force_field, element, mms,
-                 L, E, nu, nx, ny, dim, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dofs        = dofs
-        self.topology    = topology
-        self.force_field = force_field
-        self.element     = element
-        self.mms         = mms
-        self.L, self.E, self.nu     = L, E, nu
-        self.nx, self.ny, self.dim  = nx, ny, dim
-
-    def onSimulationInitDoneEvent(self, event):
-        nodes = self.dofs.rest_position.array().copy()
-        conn  = self.element.read_connectivity(self.topology)
-        F_xy  = self.element.compute_nodal_forces(
-            nodes, conn, self.mms,
-            self.L, self.E, self.nu, self.nx, self.ny, self.dim)
-        if self.dim == "3d":
-            F_full = np.hstack([F_xy, np.zeros((len(F_xy), 1))])
-        else:
-            F_full = F_xy
-        with self.force_field.forces.writeableArray() as forces:
-            forces[:] = F_full
-
-
-# ---------------------------------------------------------------------------
 # SOFA scene
 # ---------------------------------------------------------------------------
+
+def _beam_force_compute(element, mms, L, E, nu, nx, ny, dim):
+    """Return a `(nodes, topology) -> force array` for the shared NodalForceAssembler.
+
+    Pads the 2D force array with a zero z-column when the scene uses Vec3d.
+    """
+    def compute(nodes, topology):
+        conn  = element.read_connectivity(topology)
+        F_xy  = element.compute_nodal_forces(
+            nodes, conn, mms, L, E, nu, nx, ny, dim)
+        if dim == "3d":
+            return np.hstack([F_xy, np.zeros((len(F_xy), 1))])
+        return F_xy
+    return compute
 
 def build_beam_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
                      nx=10, ny=10, with_visual=True, dim="2d"):
@@ -295,8 +271,7 @@ def build_beam_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
 
     Beam.addObject(NodalForceAssembler(
         dofs=dofs, topology=topology, force_field=force_field,
-        element=element, mms=mms,
-        L=L, E=E, nu=nu, nx=nx, ny=ny, dim=dim,
+        compute_forces=_beam_force_compute(element, mms, L, E, nu, nx, ny, dim),
         name="nodalForceAssembler"))
 
     return dofs, topology
