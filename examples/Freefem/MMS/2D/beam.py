@@ -11,14 +11,8 @@ import SofaRuntime
 
 # Make the parent MMS/ directory importable so we can pull in fem.py.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fem import (
-    assemble_nodal_forces_2d,
-    assemble_traction_2d,
-    l2_error_2d,
-    h1_semi_error_2d,
-    quad_q1_rule,
-    tri_p1_rule,
-)
+from fem import quad_q1_rule, tri_p1_rule          # re-exported for case files
+from elements import element_quad, element_tri     # re-exported for case files
 from beam_solution import BeamSolution2D
 from output import write_solution_table
 from scene import NodalForceAssembler
@@ -52,131 +46,6 @@ def get_nodes_2d(L, nx, ny, dim="2d"):
 
 def _dim_template(dim):
     return "Vec3d" if dim == "3d" else "Vec2d"
-
-
-def _boundary_edges(nx, ny):
-    """Return (bottom, top, left, right) edge lists for a structured nx×ny grid."""
-    bottom = [(i, i + 1)                                    for i in range(nx - 1)]
-    top    = [((ny - 1) * nx + i, (ny - 1) * nx + i + 1)    for i in range(nx - 1)]
-    left   = [(j * nx, (j + 1) * nx)                        for j in range(ny - 1)]
-    right  = [(j * nx + (nx - 1), (j + 1) * nx + (nx - 1))  for j in range(ny - 1)]
-    return bottom, top, left, right
-
-
-# ---------------------------------------------------------------------------
-# Element strategies
-#
-# Each element type is a thin class declaring:
-#   LABEL              : human-readable identifier (used in plot legends)
-#   ELEMENT_RULE       : an element rule (e.g. quad_q1_rule(2))
-#   add_topology(rootNode, Beam, nx, ny, L) : wire the SOFA topology and
-#       return the topology container that holds the connectivity.
-#       Uses RegularGridTopology under a sibling `Grid` child.
-#   read_connectivity(topology) : extract the connectivity array from the
-#       SOFA topology container, post-init.
-#   to_triangles(conn) : triangulation for matplotlib tricontourf.
-#
-# Assembly / error-norm logic lives once on _ElementBase. Connectivity is
-# supplied by the caller (the NodalForceAssembler controller reads it from
-# SOFA after init); the element class never holds its own copy.
-# ---------------------------------------------------------------------------
-
-class _ElementBase:
-    @classmethod
-    def compute_nodal_forces(cls, nodes_2d, conn, mms, L, E, nu, nx, ny, dim):
-        xy = nodes_2d[:, :2]
-
-        F = assemble_nodal_forces_2d(
-            lambda x, y: mms.source(x, y, E, nu, L, dim),
-            xy, conn, cls._source_rule(mms))
-
-        bottom, top, left, right = _boundary_edges(nx, ny)
-        sides = [(bottom, 0.0, -1.0),
-                 (top,    0.0, +1.0),
-                 (left,  -1.0,  0.0),
-                 (right, +1.0,  0.0)]
-        for edges, nrm_x, nrm_y in sides:
-            F += assemble_traction_2d(
-                lambda x, y, nx=nrm_x, ny=nrm_y:
-                    mms.traction(x, y, nx, ny, E, nu, L, dim),
-                xy, edges)
-        return F
-
-    @classmethod
-    def compute_l2(cls, sol, mms, L):
-        return l2_error_2d(
-            sol.nodes, sol.conn, np.column_stack([sol.ux, sol.uy]),
-            lambda x, y: mms.u_ex(x, y, L),
-            cls.ELEMENT_RULE)
-
-    @classmethod
-    def compute_h1(cls, sol, mms, L):
-        return h1_semi_error_2d(
-            sol.nodes, sol.conn, np.column_stack([sol.ux, sol.uy]),
-            lambda x, y: mms.grad_u_ex(x, y, L),
-            cls.ELEMENT_RULE)
-
-
-class _QuadElement(_ElementBase):
-    LABEL        = "Q1 quad"
-    ELEMENT_RULE = staticmethod(quad_q1_rule(2))   # used for L²/H¹ error norms
-
-    @staticmethod
-    def _source_rule(mms):
-        rule = mms.source_quadrature_quad
-        if rule is None:
-            raise ValueError(
-                f"{type(mms).__name__}.source_quadrature_quad must be set")
-        return rule
-
-    @staticmethod
-    def add_topology(Beam):
-        topology = Beam.addObject("QuadSetTopologyContainer", name="topology",
-                                  quads="@../Grid/grid.quads",
-                                  position="@../Grid/grid.position")
-        Beam.addObject("QuadSetTopologyModifier")
-        return topology
-
-    @staticmethod
-    def read_connectivity(topology):
-        return topology.quads.array().copy()
-
-    @staticmethod
-    def to_triangles(conn):
-        tris = []
-        for q in conn:
-            tris.append([q[0], q[1], q[2]])
-            tris.append([q[0], q[2], q[3]])
-        return np.array(tris)
-
-
-class _TriElement(_ElementBase):
-    LABEL        = "P1 tri"
-    ELEMENT_RULE = staticmethod(tri_p1_rule(3))    # used for L²/H¹ error norms
-
-    @staticmethod
-    def _source_rule(mms):
-        rule = mms.source_quadrature_tri
-        if rule is None:
-            raise ValueError(
-                f"{type(mms).__name__}.source_quadrature_tri must be set")
-        return rule
-
-    @staticmethod
-    def add_topology(Beam):
-        topology = Beam.addObject("TriangleSetTopologyContainer", name="topology")
-        Beam.addObject("Quad2TriangleTopologicalMapping",
-                       input="@../Grid/grid", output="@topology")
-        Beam.addObject("TriangleSetTopologyModifier")
-        return topology
-
-    @staticmethod
-    def read_connectivity(topology):
-        return topology.triangles.array().copy()
-
-    @staticmethod
-    def to_triangles(conn):
-        return conn
 
 
 # ---------------------------------------------------------------------------
@@ -415,11 +284,3 @@ def case_scene(mms, element):
                          with_visual=True, dim=ref["dim"])
         return rootNode
     return createScene
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Element instances
-# ─────────────────────────────────────────────────────────────────────────────
-
-element_quad = _QuadElement()
-element_tri  = _TriElement()

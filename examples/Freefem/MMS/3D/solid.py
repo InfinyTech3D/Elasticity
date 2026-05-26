@@ -11,13 +11,8 @@ import SofaRuntime
 
 # Make the parent MMS/ directory importable so we can pull in fem.py.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fem import (
-    assemble_nodal_forces_3d,
-    assemble_traction_3d,
-    l2_error_3d,
-    h1_semi_error_3d,
-    hex_q1_rule,
-)
+from fem import hex_q1_rule              # re-exported for case files
+from elements import element_hex          # re-exported for case files
 from solid_solution import SolidSolution3D
 from output import write_solution_table
 from scene import NodalForceAssembler
@@ -46,116 +41,6 @@ def get_nodes_3d(L, nx, ny, nz):
     pts = [[i*dx, j*dy, k*dz]
            for k in range(nz) for j in range(ny) for i in range(nx)]
     return np.array(pts, dtype=float)
-
-
-def _boundary_quads(nx, ny, nz):
-    """Return (xm, xp, ym, yp, zm, zp) quad lists for a structured nx×ny×nz grid.
-
-    Each quad is a 4-tuple of node indices. Node index convention:
-    `idx(i, j, k) = i + j*nx + k*nx*ny` (matches SOFA RegularGridTopology).
-    Orientation is consistent within each face but its sign does not affect
-    `assemble_traction_3d`, which uses |t_xi × t_eta| for the surface area
-    and takes the outward normal from the caller.
-    """
-    def idx(i, j, k):
-        return i + j * nx + k * nx * ny
-
-    xm = [(idx(0, j, k),    idx(0, j+1, k),    idx(0, j+1, k+1),    idx(0, j, k+1))
-          for k in range(nz - 1) for j in range(ny - 1)]
-    xp = [(idx(nx-1, j, k), idx(nx-1, j+1, k), idx(nx-1, j+1, k+1), idx(nx-1, j, k+1))
-          for k in range(nz - 1) for j in range(ny - 1)]
-    ym = [(idx(i, 0, k),    idx(i+1, 0, k),    idx(i+1, 0, k+1),    idx(i, 0, k+1))
-          for k in range(nz - 1) for i in range(nx - 1)]
-    yp = [(idx(i, ny-1, k), idx(i+1, ny-1, k), idx(i+1, ny-1, k+1), idx(i, ny-1, k+1))
-          for k in range(nz - 1) for i in range(nx - 1)]
-    zm = [(idx(i, j, 0),    idx(i+1, j, 0),    idx(i+1, j+1, 0),    idx(i, j+1, 0))
-          for j in range(ny - 1) for i in range(nx - 1)]
-    zp = [(idx(i, j, nz-1), idx(i+1, j, nz-1), idx(i+1, j+1, nz-1), idx(i, j+1, nz-1))
-          for j in range(ny - 1) for i in range(nx - 1)]
-    return xm, xp, ym, yp, zm, zp
-
-
-# ---------------------------------------------------------------------------
-# Element strategies
-#
-# Each element type is a thin class declaring:
-#   LABEL              : human-readable identifier (used in plot legends)
-#   ELEMENT_RULE       : an element rule (e.g. hex_q1_rule(2))
-#   add_topology(Solid) : wire the SOFA topology and return the topology
-#       container that holds the connectivity.
-#       Uses RegularGridTopology under a sibling `Grid` child.
-#   read_connectivity(topology) : extract the connectivity array from the
-#       SOFA topology container, post-init.
-#
-# Assembly / error-norm logic lives once on _ElementBase. Connectivity is
-# supplied by the caller (the NodalForceAssembler controller reads it from
-# SOFA after init); the element class never holds its own copy.
-# ---------------------------------------------------------------------------
-
-class _ElementBase:
-    @classmethod
-    def compute_nodal_forces(cls, nodes_3d, conn, mms, L, E, nu, nx, ny, nz):
-        xyz = nodes_3d[:, :3]
-
-        F = assemble_nodal_forces_3d(
-            lambda x, y, z: mms.source(x, y, z, E, nu, L),
-            xyz, conn, cls._source_rule(mms))
-
-        xm, xp, ym, yp, zm, zp = _boundary_quads(nx, ny, nz)
-        sides = [(xm, -1.0, 0.0, 0.0),
-                 (xp, +1.0, 0.0, 0.0),
-                 (ym,  0.0, -1.0, 0.0),
-                 (yp,  0.0, +1.0, 0.0),
-                 (zm,  0.0, 0.0, -1.0),
-                 (zp,  0.0, 0.0, +1.0)]
-        for quads, nrm_x, nrm_y, nrm_z in sides:
-            F += assemble_traction_3d(
-                lambda x, y, z, nx=nrm_x, ny=nrm_y, nz=nrm_z:
-                    mms.traction(x, y, z, nx, ny, nz, E, nu, L),
-                xyz, quads)
-        return F
-
-    @classmethod
-    def compute_l2(cls, sol, mms, L):
-        return l2_error_3d(
-            sol.nodes, sol.conn,
-            np.column_stack([sol.ux, sol.uy, sol.uz]),
-            lambda x, y, z: mms.u_ex(x, y, z, L),
-            cls.ELEMENT_RULE)
-
-    @classmethod
-    def compute_h1(cls, sol, mms, L):
-        return h1_semi_error_3d(
-            sol.nodes, sol.conn,
-            np.column_stack([sol.ux, sol.uy, sol.uz]),
-            lambda x, y, z: mms.grad_u_ex(x, y, z, L),
-            cls.ELEMENT_RULE)
-
-
-class _HexElement(_ElementBase):
-    LABEL        = "Q1 hex"
-    ELEMENT_RULE = staticmethod(hex_q1_rule(2))   # used for L²/H¹ error norms
-
-    @staticmethod
-    def _source_rule(mms):
-        rule = mms.source_quadrature_hex
-        if rule is None:
-            raise ValueError(
-                f"{type(mms).__name__}.source_quadrature_hex must be set")
-        return rule
-
-    @staticmethod
-    def add_topology(Solid):
-        topology = Solid.addObject("HexahedronSetTopologyContainer",
-                                   name="topology",
-                                   hexahedra="@../Grid/grid.hexahedra",
-                                   position="@../Grid/grid.position")
-        Solid.addObject("HexahedronSetTopologyModifier")
-        return topology
-
-    @staticmethod
-    def read_connectivity(topology):
-        return topology.hexahedra.array().copy()
 
 
 # ---------------------------------------------------------------------------
@@ -418,10 +303,3 @@ def case_scene(mms, element):
                           with_visual=True)
         return rootNode
     return createScene
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Element instances
-# ─────────────────────────────────────────────────────────────────────────────
-
-element_hex = _HexElement()
