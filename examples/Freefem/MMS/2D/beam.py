@@ -86,7 +86,7 @@ class _ElementBase:
 
         F = assemble_nodal_forces_2d(
             lambda x, y: mms.source(x, y, E, nu, L, dim),
-            xy, conn, cls.ELEMENT_RULE)
+            xy, conn, cls._source_rule(mms))
 
         bottom, top, left, right = _boundary_edges(nx, ny)
         sides = [(bottom, 0.0, -1.0),
@@ -117,7 +117,15 @@ class _ElementBase:
 
 class _QuadElement(_ElementBase):
     LABEL        = "Q1 quad"
-    ELEMENT_RULE = staticmethod(quad_q1_rule(2))
+    ELEMENT_RULE = staticmethod(quad_q1_rule(2))   # used for L²/H¹ error norms
+
+    @staticmethod
+    def _source_rule(mms):
+        rule = mms.source_quadrature_quad
+        if rule is None:
+            raise ValueError(
+                f"{type(mms).__name__}.source_quadrature_quad must be set")
+        return rule
 
     @staticmethod
     def add_topology(Beam):
@@ -142,7 +150,15 @@ class _QuadElement(_ElementBase):
 
 class _TriElement(_ElementBase):
     LABEL        = "P1 tri"
-    ELEMENT_RULE = staticmethod(tri_p1_rule(3))
+    ELEMENT_RULE = staticmethod(tri_p1_rule(3))    # used for L²/H¹ error norms
+
+    @staticmethod
+    def _source_rule(mms):
+        rule = mms.source_quadrature_tri
+        if rule is None:
+            raise ValueError(
+                f"{type(mms).__name__}.source_quadrature_tri must be set")
+        return rule
 
     @staticmethod
     def add_topology(Beam):

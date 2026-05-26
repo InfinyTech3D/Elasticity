@@ -11,11 +11,17 @@ Cubic 2D MMS on [0,L]^2 with linear-elasticity constitutive law:
 import numpy as np
 
 from manufactured_solution import MMSCase2D, lame
+from beam import (case_scene, run_reference_scene,
+                  element_quad, element_tri,
+                  quad_q1_rule, tri_p1_rule)
 
 
 class Cubic(MMSCase2D):
     name       = "cubic"
     plot_label = r"$u_x = x(L-x)(x+y),\ u_y = y(L-y)(y-x)$"
+
+    source_quadrature_quad = staticmethod(quad_q1_rule(2))
+    source_quadrature_tri  = staticmethod(tri_p1_rule(3))
 
     def u_ex(self, x, y, L):
         return (x * (L - x) * (x + y),
@@ -75,13 +81,9 @@ class Cubic(MMSCase2D):
         return (fx, fy)
 
 
-from beam import case_scene, element_quad, element_tri
-
 mms         = Cubic()
 createScene = case_scene(mms, element_quad)
 
 
 if __name__ == "__main__":
-    from beam import run_reference_scene
-
     run_reference_scene(element_quad, mms)

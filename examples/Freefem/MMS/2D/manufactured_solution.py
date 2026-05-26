@@ -22,6 +22,11 @@ class MMSCase2D(ABC):
     name       = None  # case identifier (must match the params.json key)
     plot_label = None  # LaTeX label for the exact solution
 
+    # Body-force quadrature rules — must be set by each concrete case.
+    # No framework fallback; assembly raises if either is unset.
+    source_quadrature_quad = None   # element rule for Q1 quads (e.g. quad_q1_rule(2))
+    source_quadrature_tri  = None   # element rule for P1 triangles (e.g. tri_p1_rule(3))
+
     @abstractmethod
     def u_ex(self, x, y, L):
         """Exact solution: returns (ux, uy)."""
