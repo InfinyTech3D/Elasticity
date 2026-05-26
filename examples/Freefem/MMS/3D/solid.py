@@ -19,6 +19,7 @@ from fem import (
     hex_q1_rule,
 )
 from solid_solution import SolidSolution3D
+from output import write_solution_table
 
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
@@ -291,33 +292,6 @@ def solve_solid(elem, mms, L, E, nu, nx, ny, nz):
 # Output helpers (mirror 2D beam.py)
 # ---------------------------------------------------------------------------
 
-def write_solution_table(stem, x, y, z, ux_h, uy_h, uz_h, u_ex, error_dict):
-    """
-    Write per-node solution table and error summary to results/<stem>.txt.
-
-    u_ex       : callable (x, y, z) -> (ux_ex, uy_ex, uz_ex)
-    error_dict : ordered dict of {label: value} for error summary lines
-    """
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    path = os.path.join(RESULTS_DIR, f"{stem}.txt")
-    with open(path, "w") as f:
-        f.write(f"{'x':>10} | {'y':>10} | {'z':>10} | "
-                f"{'ux_h':>15} | {'uy_h':>15} | {'uz_h':>15} | "
-                f"{'ux_ex':>15} | {'uy_ex':>15} | {'uz_ex':>15} | "
-                f"{'err_x':>15} | {'err_y':>15} | {'err_z':>15}\n")
-        f.write("-" * 184 + "\n")
-        for xi, yi, zi, uxi, uyi, uzi in zip(x, y, z, ux_h, uy_h, uz_h):
-            uxe, uye, uze = u_ex(xi, yi, zi)
-            f.write(f"{xi:10.4f} | {yi:10.4f} | {zi:10.4f} | "
-                    f"{uxi:15.6e} | {uyi:15.6e} | {uzi:15.6e} | "
-                    f"{uxe:15.6e} | {uye:15.6e} | {uze:15.6e} | "
-                    f"{abs(uxi - uxe):15.6e} | {abs(uyi - uye):15.6e} | "
-                    f"{abs(uzi - uze):15.6e}\n")
-        f.write("\n")
-        for label, val in error_dict.items():
-            f.write(f"{label:12s} = {val:.6e}\n")
-
-
 def plot_solution_profile(stem, sol, mms, L, nx, ny, nz, label, nu, l2, h1):
     """Save 1-D centerline profiles (ux(x), uy(y), uz(z)) to results/<stem>.png."""
     os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -439,11 +413,10 @@ def run_reference_scene(elem, mms):
     stem  = f"{mms.name}_{tag}_nu{nu}_nx{nx}"
 
     xyz = sol.nodes[:, :3]
-    write_solution_table(f"solution_{stem}",
-                         xyz[:, 0], xyz[:, 1], xyz[:, 2],
-                         sol.ux, sol.uy, sol.uz,
+    write_solution_table(f"solution_{stem}", xyz,
+                         np.column_stack([sol.ux, sol.uy, sol.uz]),
                          lambda xi, yi, zi: mms.u_ex(xi, yi, zi, L),
-                         {"L2": l2, "H1_semi": h1})
+                         RESULTS_DIR, {"L2": l2, "H1_semi": h1})
     plot_solution_profile(f"solution_{stem}", sol, mms, L, nx, ny, nz,
                           label, nu, l2, h1)
     plot_solution_slices (f"fields3D_{stem}", sol, mms, L, nx, ny, nz,

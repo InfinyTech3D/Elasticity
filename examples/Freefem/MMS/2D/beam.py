@@ -20,6 +20,7 @@ from fem import (
     tri_p1_rule,
 )
 from beam_solution import BeamSolution2D
+from output import write_solution_table
 
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
@@ -329,29 +330,6 @@ def solve_beam(elem, mms, L, E, nu, nx, ny, dim="2d"):
 # Output helpers (mirror 1D bar.py)
 # ---------------------------------------------------------------------------
 
-def write_solution_table(stem, x, y, ux_h, uy_h, u_ex, error_dict):
-    """
-    Write per-node solution table and error summary to results/<stem>.txt.
-
-    u_ex       : callable (x, y) -> (ux_ex, uy_ex)
-    error_dict : ordered dict of {label: value} for error summary lines
-    """
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    path = os.path.join(RESULTS_DIR, f"{stem}.txt")
-    with open(path, "w") as f:
-        f.write(f"{'x':>10} | {'y':>10} | {'ux_h':>15} | {'uy_h':>15} | "
-                f"{'ux_ex':>15} | {'uy_ex':>15} | {'err_x':>15} | {'err_y':>15}\n")
-        f.write("-" * 124 + "\n")
-        for xi, yi, uxi, uyi in zip(x, y, ux_h, uy_h):
-            uxe, uye = u_ex(xi, yi)
-            f.write(f"{xi:10.4f} | {yi:10.4f} | {uxi:15.6e} | {uyi:15.6e} | "
-                    f"{uxe:15.6e} | {uye:15.6e} | "
-                    f"{abs(uxi - uxe):15.6e} | {abs(uyi - uye):15.6e}\n")
-        f.write("\n")
-        for label, val in error_dict.items():
-            f.write(f"{label:12s} = {val:.6e}\n")
-
-
 def plot_solution_profile(stem, sol, mms, L, nx, ny, label, dim, hyp, nu, l2, h1):
     """Save 1-D mid-height profile (ux, uy vs x) to results/<stem>.png."""
     os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -435,10 +413,10 @@ def run_reference_scene(elem, mms):
     stem  = f"{mms.name}_{tag}_{dim}_nu{nu}_nx{nx}"
 
     xy = sol.nodes[:, :2]
-    write_solution_table(f"solution_{stem}", xy[:, 0], xy[:, 1],
-                         sol.ux, sol.uy,
+    write_solution_table(f"solution_{stem}", xy,
+                         np.column_stack([sol.ux, sol.uy]),
                          lambda xi, yi: mms.u_ex(xi, yi, L),
-                         {"L2": l2, "H1_semi": h1})
+                         RESULTS_DIR, {"L2": l2, "H1_semi": h1})
     plot_solution_profile(f"solution_{stem}", sol, mms, L, nx, ny,
                           label, dim, hyp, nu, l2, h1)
     plot_solution_fields (f"fields2D_{stem}", sol, elem, mms, L, nx,
