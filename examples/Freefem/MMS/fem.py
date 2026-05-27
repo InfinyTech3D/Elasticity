@@ -306,10 +306,13 @@ def assemble_nodal_forces(f_body, nodes, conn, element_rule):
     dim   = nodes.shape[1]
     F     = np.zeros((len(nodes), dim))
     for elem in conn:
-        xe = nodes[elem]                          # (n_local, dim)
+        # np.asarray forces row-style fancy indexing even when `elem` is a
+        # Python tuple (which would otherwise trigger multi-axis indexing).
+        idx = np.asarray(elem)
+        xe  = nodes[idx]                          # (n_local, dim)
         for coords, w, N, _ in element_rule(xe):
             f_components = f_body(*coords)
-            for a, node in enumerate(elem):
+            for a, node in enumerate(idx):
                 for d in range(dim):
                     F[node, d] += N[a] * f_components[d] * w
     return F
@@ -334,10 +337,11 @@ def assemble_traction(traction, nodes, facets, facet_rule):
     dim   = nodes.shape[1]
     F     = np.zeros((len(nodes), dim))
     for facet in facets:
-        xe = nodes[facet]                         # (n_local, dim)
+        idx = np.asarray(facet)
+        xe  = nodes[idx]                          # (n_local, dim)
         for coords, w, N in facet_rule(xe):
             T = traction(*coords)
-            for a, node in enumerate(facet):
+            for a, node in enumerate(idx):
                 for d in range(dim):
                     F[node, d] += N[a] * T[d] * w
     return F
@@ -391,8 +395,9 @@ def l2_error(nodes, conn, u_h, u_ex, element_rule):
     u     = np.asarray(u_h)
     total = 0.0
     for elem in conn:
-        xe    = nodes[elem]                       # (n_local, dim)
-        u_loc = u[elem]                           # (n_local, dim)
+        idx   = np.asarray(elem)
+        xe    = nodes[idx]                        # (n_local, dim)
+        u_loc = u[idx]                            # (n_local, dim)
         for coords, w, N, _ in element_rule(xe):
             u_h_g  = N @ u_loc                    # (dim,)
             u_ex_g = np.asarray(u_ex(*coords))    # (dim,)
@@ -417,8 +422,9 @@ def h1_semi_error(nodes, conn, u_h, grad_u_ex, element_rule):
     u     = np.asarray(u_h)
     total = 0.0
     for elem in conn:
-        xe    = nodes[elem]                       # (n_local, dim)
-        u_loc = u[elem]                           # (n_local, dim)
+        idx   = np.asarray(elem)
+        xe    = nodes[idx]                        # (n_local, dim)
+        u_loc = u[idx]                            # (n_local, dim)
         for coords, w, _, dN_phys in element_rule(xe):
             # grad_uh[i, d] = sum_a u_i[a] * dN_a/dx_d
             grad_uh = (dN_phys @ u_loc).T         # (dim, dim) [i, d]
