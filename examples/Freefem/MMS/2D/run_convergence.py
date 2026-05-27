@@ -46,7 +46,7 @@ def convergence_study(elem_specs, mms, L, E, nu, nx_values, dim="2d"):
                 "L2": lambda sol, _e=elem: _e.compute_l2(sol, mms, L),
                 "H1": lambda sol, _e=elem: _e.compute_h1(sol, mms, L),
             },
-            banner     = f"── {label}  [{dim} / {hyp}]  {mms.name}  nu={nu} ──",
+            banner     = f"-- {label}  [{dim} / {hyp}]  {mms.name}  nu={nu} --",
             results_dir = RESULTS_DIR,
             table_stem  = stem,
         )
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     # dim="2d" → Vec2d / plane stress;  dim="3d" → Vec3d / plane strain
     for mms in (cubic_mms, trig_mms, incomp_mms):
         nx_vals = conv["nx_values"][mms.name]
-        print(f"\n══ {mms.name} ══")
+        print(f"\n== {mms.name} ==")
         for DIM in conv["dim_values"]:
             for nu in conv["nu_values"]:
                 convergence_study(specs, mms, L, E, nu, nx_vals, dim=DIM)

@@ -42,7 +42,7 @@ def convergence_study(elem_specs, mms, L, E, nu, nx_values):
                 "L2": lambda sol, _e=elem: _e.compute_l2(sol, mms, L),
                 "H1": lambda sol, _e=elem: _e.compute_h1(sol, mms, L),
             },
-            banner     = f"── {label}  {mms.name}  nu={nu} ──",
+            banner     = f"-- {label}  {mms.name}  nu={nu} --",
             results_dir = RESULTS_DIR,
             table_stem  = stem,
         )
@@ -71,6 +71,6 @@ if __name__ == "__main__":
 
     for mms in (sinus_neumann_mms,):
         nx_vals = conv["nx_values"][mms.name]
-        print(f"\n══ {mms.name} ══")
+        print(f"\n== {mms.name} ==")
         for nu in conv["nu_values"]:
             convergence_study(specs, mms, L, E, nu, nx_vals)

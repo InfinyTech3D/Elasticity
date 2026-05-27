@@ -32,7 +32,7 @@ if __name__ == "__main__":
                 "H1": lambda sol, _m=mms: h1_semi_error_1d(
                     sol.x0, sol.edges, sol.u_h, _m.du_ex, H1_QUADRATURE_1D),
             },
-            banner     = f"── Convergence  {mms.name} ──",
+            banner     = f"-- Convergence  {mms.name} --",
             results_dir = RESULTS_DIR,
             table_stem  = stem,
         )
