@@ -5,7 +5,7 @@ import sys
 from abc import abstractmethod
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from manufactured_solution import MMSCase
+from mms_case import MMSCase
 
 
 def lame(E, nu, dim):
