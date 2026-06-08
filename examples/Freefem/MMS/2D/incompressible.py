@@ -1,8 +1,8 @@
 """
 Incompressible 2D MMS on [0,L]^2 with linear-elasticity constitutive law:
 
-    u_ex(x, y) = ( sin(pi x / L) cos(pi y / L),
-                  -cos(pi x / L) sin(pi y / L) )
+    u_ex(x, y) = coef ( sin(pi x / L) cos(pi y / L),
+               - coef ( cos(pi x / L) sin(pi y / L) )
 
     div u = 0 everywhere — the lambda * tr(eps) term in sigma vanishes
     pointwise, so the discretization is exercised in the lambda → infinity
@@ -19,6 +19,7 @@ from manufactured_solution import MMSCase2D, lame
 from beam import (case_scene, run_reference_scene,
                   element_quad, element_tri,
                   quad_q1_rule, tri_p1_rule)
+coef=0.1
 
 
 class Incompressible(MMSCase2D):
@@ -31,15 +32,15 @@ class Incompressible(MMSCase2D):
 
     def u_ex(self, x, y, L):
         k = np.pi / L
-        return ( np.sin(k * x) * np.cos(k * y),
-                -np.cos(k * x) * np.sin(k * y))
+        return (coef * np.sin(k * x) * np.cos(k * y),
+               -coef * np.cos(k * x) * np.sin(k * y))
 
     def grad_u_ex(self, x, y, L):
         k = np.pi / L
-        dux_dx =  k * np.cos(k * x) * np.cos(k * y)
-        dux_dy = -k * np.sin(k * x) * np.sin(k * y)
-        duy_dx =  k * np.sin(k * x) * np.sin(k * y)
-        duy_dy = -k * np.cos(k * x) * np.cos(k * y)
+        dux_dx =   coef * k * np.cos(k * x) * np.cos(k * y)
+        dux_dy = - coef * k * np.sin(k * x) * np.sin(k * y)
+        duy_dx =   coef * k * np.sin(k * x) * np.sin(k * y)
+        duy_dy = - coef * k * np.cos(k * x) * np.cos(k * y)
         return np.array([[dux_dx, dux_dy],
                          [duy_dx, duy_dy]])
 
@@ -48,12 +49,12 @@ class Incompressible(MMSCase2D):
         k  = np.pi / L
         ux =  np.sin(k * x) * np.cos(k * y)
         uy = -np.cos(k * x) * np.sin(k * y)
-        d2ux_dxx = -k**2 * ux
-        d2ux_dyy = -k**2 * ux
-        d2ux_dxy = -k**2 * np.cos(k * x) * np.sin(k * y)
-        d2uy_dxx = -k**2 * uy
-        d2uy_dyy = -k**2 * uy
-        d2uy_dxy =  k**2 * np.sin(k * x) * np.cos(k * y)
+        d2ux_dxx = - coef * k**2 * ux
+        d2ux_dyy = - coef * k**2 * ux
+        d2ux_dxy = - coef * k**2 * np.cos(k * x) * np.sin(k * y)
+        d2uy_dxx = - coef * k**2 * uy
+        d2uy_dyy = - coef * k**2 * uy
+        d2uy_dxy =   coef * k**2 * np.sin(k * x) * np.cos(k * y)
         fx = -((lam + 2*mu) * d2ux_dxx + lam * d2uy_dxy
              + mu * (d2ux_dyy + d2uy_dxy))
         fy = -(mu * (d2ux_dxy + d2uy_dxx) + lam * d2ux_dxy
@@ -97,8 +98,8 @@ class Incompressible(MMSCase2D):
 
 
 mms         = Incompressible()
-createScene = case_scene(mms, element_quad)
+createScene = case_scene(mms, element_tri)
 
 
 if __name__ == "__main__":
-    run_reference_scene(element_quad, mms)
+    run_reference_scene(element_tri, mms)
