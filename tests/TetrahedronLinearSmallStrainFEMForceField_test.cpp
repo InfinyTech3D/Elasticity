@@ -1,6 +1,7 @@
 #include <sofa/component/solidmechanics/fem/elastic/ElementLinearSmallStrainFEMForceField.h>
 #include <sofa/component/solidmechanics/fem/elastic/TetrahedronFEMForceField.h>
 #include <sofa/component/solidmechanics/fem/elastic/impl/LameParameters.h>
+#include <sofa/component/solidmechanics/fem/elastic/impl/OrthotropicElasticityTensor.h>
 #include <sofa/component/solidmechanics/testing/ForceFieldTestCreation.h>
 #include <sofa/component/topology/container/constant/MeshTopology.h>
 #include <sofa/core/behavior/BaseForceField.h>

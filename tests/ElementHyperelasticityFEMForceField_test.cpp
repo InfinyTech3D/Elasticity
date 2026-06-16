@@ -1,4 +1,4 @@
-#include <Elasticity/component/ElementHyperelasticityFEMForceField.h>
+#include <Elasticity/component/HyperelasticityFEMForceField.h>
 #include <Elasticity/component/material/StVenantKirchhoffMaterial.h>
 #include <Elasticity/init.h>
 #include <sofa/component/solidmechanics/testing/ForceFieldTestCreation.h>
@@ -78,9 +78,9 @@ struct ExpectedForce<sofa::defaulttype::StdVectorTypes<sofa::type::Vec<3, Real>,
  */
 template <class DataTypes, class ElementType>
 struct ElementHyperelasticityFEMForceField_stepTest :
-    sofa::ForceField_test<ElementHyperelasticityFEMForceField<DataTypes, ElementType>>
+    sofa::ForceField_test<HyperelasticityFEMForceField<DataTypes, ElementType>>
 {
-    using ForceField = ElementHyperelasticityFEMForceField<DataTypes, ElementType>;
+    using ForceField = HyperelasticityFEMForceField<DataTypes, ElementType>;
     using Inherited = sofa::ForceField_test<ForceField>;
     using DataVecCoord = sofa::DataVecDeriv_t<DataTypes>;
     using DataVecDeriv = sofa::DataVecDeriv_t<DataTypes>;

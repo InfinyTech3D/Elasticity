@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Elasticity/component/ElementHyperelasticityFEMForceField.h>
+#include <Elasticity/component/HyperelasticityFEMForceField.h>
 #include <Elasticity/impl/Strain.h>
 #include <sofa/component/solidmechanics/fem/elastic/impl/VectorTools.h>
 #include <sofa/core/ObjectFactory.h>
@@ -12,7 +12,7 @@ namespace elasticity
 {
 
 template <class DataTypes, class ElementType>
-void ElementHyperelasticityFEMForceField<DataTypes, ElementType>::init()
+void HyperelasticityFEMForceField<DataTypes, ElementType>::init()
 {
     sofa::component::solidmechanics::fem::elastic::FEMForceField<DataTypes, ElementType>::init();
 
@@ -33,7 +33,7 @@ void ElementHyperelasticityFEMForceField<DataTypes, ElementType>::init()
 }
 
 template <class DataTypes, class ElementType>
-void ElementHyperelasticityFEMForceField<DataTypes, ElementType>::buildStiffnessMatrix(
+void HyperelasticityFEMForceField<DataTypes, ElementType>::buildStiffnessMatrix(
     sofa::core::behavior::StiffnessMatrix* matrix)
 {
     if (this->isComponentStateInvalid())
@@ -67,14 +67,14 @@ void ElementHyperelasticityFEMForceField<DataTypes, ElementType>::buildStiffness
 }
 
 template <class DataTypes, class ElementType>
-SReal ElementHyperelasticityFEMForceField<DataTypes, ElementType>::getPotentialEnergy(
+SReal HyperelasticityFEMForceField<DataTypes, ElementType>::getPotentialEnergy(
     const sofa::core::MechanicalParams*, const DataVecCoord& x) const
 {
     return 0;
 }
 
 template <class TDataTypes, class TElementType>
-void ElementHyperelasticityFEMForceField<TDataTypes, TElementType>::addKToMatrix(
+void HyperelasticityFEMForceField<TDataTypes, TElementType>::addKToMatrix(
     sofa::linearalgebra::BaseMatrix* matrix, SReal kFact, unsigned& offset)
 {
     if (this->isComponentStateInvalid())
@@ -109,7 +109,7 @@ void ElementHyperelasticityFEMForceField<TDataTypes, TElementType>::addKToMatrix
 }
 
 template <class DataTypes, class ElementType>
-void ElementHyperelasticityFEMForceField<DataTypes, ElementType>::validateMaterial()
+void HyperelasticityFEMForceField<DataTypes, ElementType>::validateMaterial()
 {
     if (l_material.empty())
     {
@@ -131,7 +131,7 @@ void ElementHyperelasticityFEMForceField<DataTypes, ElementType>::validateMateri
 }
 
 template <class DataTypes, class ElementType>
-void ElementHyperelasticityFEMForceField<DataTypes, ElementType>::computeHessian(const VecCoord& coordinates)
+void HyperelasticityFEMForceField<DataTypes, ElementType>::computeHessian(const VecCoord& coordinates)
 {
     if (this->l_topology == nullptr) return;
     if (l_material == nullptr) return;
@@ -225,7 +225,7 @@ void ElementHyperelasticityFEMForceField<DataTypes, ElementType>::computeHessian
 }
 
 template <class DataTypes, class ElementType>
-auto ElementHyperelasticityFEMForceField<DataTypes, ElementType>::computeDeformationGradient(
+auto HyperelasticityFEMForceField<DataTypes, ElementType>::computeDeformationGradient(
     const sofa::type::Mat<spatial_dimensions, TopologicalDimension, Real>& J_q,
     const sofa::type::Mat<TopologicalDimension, spatial_dimensions, Real>& J_Q_inv) -> DeformationGradient
 {
@@ -233,7 +233,7 @@ auto ElementHyperelasticityFEMForceField<DataTypes, ElementType>::computeDeforma
 }
 
 template <class DataTypes, class ElementType>
-auto ElementHyperelasticityFEMForceField<DataTypes, ElementType>::computeDeformationGradient2(
+auto HyperelasticityFEMForceField<DataTypes, ElementType>::computeDeformationGradient2(
     const std::array<Coord, NumberOfNodesInElement>& elementNodesCoordinates,
     const sofa::type::Mat<NumberOfNodesInElement, spatial_dimensions, Real>& dN_dQ)  -> DeformationGradient
 {
@@ -246,7 +246,7 @@ auto ElementHyperelasticityFEMForceField<DataTypes, ElementType>::computeDeforma
 }
 
 template <class TDataTypes, class TElementType>
-void ElementHyperelasticityFEMForceField<TDataTypes, TElementType>::precomputeData()
+void HyperelasticityFEMForceField<TDataTypes, TElementType>::precomputeData()
 {
     if (this->l_topology == nullptr) return;
 
@@ -281,7 +281,7 @@ void ElementHyperelasticityFEMForceField<TDataTypes, TElementType>::precomputeDa
     }
 }
 template <class TDataTypes, class TElementType>
-void ElementHyperelasticityFEMForceField<TDataTypes, TElementType>::beforeElementForce(
+void HyperelasticityFEMForceField<TDataTypes, TElementType>::beforeElementForce(
     const sofa::core::MechanicalParams* mparams, sofa::type::vector<ElementGradient>& f,
     const sofa::VecCoord_t<DataTypes>& x)
 {
@@ -303,7 +303,7 @@ void ElementHyperelasticityFEMForceField<TDataTypes, TElementType>::beforeElemen
 }
 
 template <class TDataTypes, class TElementType>
-void ElementHyperelasticityFEMForceField<TDataTypes, TElementType>::computeElementsForces(
+void HyperelasticityFEMForceField<TDataTypes, TElementType>::computeElementsForces(
     const sofa::simulation::Range<std::size_t>& range, const sofa::core::MechanicalParams* mparams,
     sofa::type::vector<ElementGradient>& f, const sofa::VecCoord_t<TDataTypes>& x)
 {
@@ -360,7 +360,7 @@ void ElementHyperelasticityFEMForceField<TDataTypes, TElementType>::computeEleme
 }
 
 template <class TDataTypes, class TElementType>
-void ElementHyperelasticityFEMForceField<TDataTypes, TElementType>::beforeElementForceDeriv(
+void HyperelasticityFEMForceField<TDataTypes, TElementType>::beforeElementForceDeriv(
     const sofa::core::MechanicalParams* mparams)
 {
     if (!m_isHessianValid)
@@ -370,7 +370,7 @@ void ElementHyperelasticityFEMForceField<TDataTypes, TElementType>::beforeElemen
 }
 
 template <class TDataTypes, class TElementType>
-void ElementHyperelasticityFEMForceField<TDataTypes, TElementType>::computeElementsForcesDeriv(
+void HyperelasticityFEMForceField<TDataTypes, TElementType>::computeElementsForcesDeriv(
     const sofa::simulation::Range<std::size_t>& range, const sofa::core::MechanicalParams* mparams,
     sofa::type::vector<ElementGradient>& df, const sofa::VecDeriv_t<TDataTypes>& dx)
 {

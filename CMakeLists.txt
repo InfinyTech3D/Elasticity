@@ -9,10 +9,8 @@ set(HEADER_FILES
     src/Elasticity/config.h.in
     src/Elasticity/init.h
 
-    src/Elasticity/component/ElementHyperelasticityFEMForceField.h
-    src/Elasticity/component/ElementHyperelasticityFEMForceField.inl
-    src/Elasticity/component/ElementPrefab.h
-    src/Elasticity/component/ElementPrefab.inl
+    src/Elasticity/component/HyperelasticityFEMForceField.h
+    src/Elasticity/component/HyperelasticityFEMForceField.inl
     src/Elasticity/component/HyperelasticMaterial.h
     src/Elasticity/component/HyperelasticMaterial.inl
     src/Elasticity/component/LinearMechanicalParametersComponent.h
@@ -33,13 +31,6 @@ set(HEADER_FILES
     src/Elasticity/component/material/StVenantKirchhoffMaterial.h
     src/Elasticity/component/material/StVenantKirchhoffMaterial.inl
 
-    src/Elasticity/component/prefab/CorotationalFEMForceField.h
-    src/Elasticity/component/prefab/CorotationalFEMForceField.inl
-    src/Elasticity/component/prefab/HyperelasticityFEMForceField.h
-    src/Elasticity/component/prefab/HyperelasticityFEMForceField.inl
-    src/Elasticity/component/prefab/LinearSmallStrainFEMForceField.h
-    src/Elasticity/component/prefab/LinearSmallStrainFEMForceField.inl
-
     src/Elasticity/impl/IdentityMatrix.h
     src/Elasticity/impl/IsotropicElasticityTensor.h
     src/Elasticity/impl/MajorSymmetric4Tensor.h
@@ -53,8 +44,7 @@ set(HEADER_FILES
 set(SOURCE_FILES
     src/Elasticity/init.cpp
 
-    src/Elasticity/component/ElementHyperelasticityFEMForceField.cpp
-    src/Elasticity/component/ElementPrefab.cpp
+    src/Elasticity/component/HyperelasticityFEMForceField.cpp
     src/Elasticity/component/HyperelasticMaterial.cpp
     src/Elasticity/component/LinearMechanicalParametersComponent.cpp
     src/Elasticity/component/PK2HyperelasticMaterial.cpp
@@ -65,10 +55,6 @@ set(SOURCE_FILES
     src/Elasticity/component/material/OgdenMaterial.cpp
     src/Elasticity/component/material/NeoHookeanMaterial.cpp
     src/Elasticity/component/material/StVenantKirchhoffMaterial.cpp
-
-    src/Elasticity/component/prefab/CorotationalFEMForceField.cpp
-    src/Elasticity/component/prefab/HyperelasticityFEMForceField.cpp
-    src/Elasticity/component/prefab/LinearSmallStrainFEMForceField.cpp
 )
 
 add_library(${PROJECT_NAME} SHARED README.md ${HEADER_FILES} ${SOURCE_FILES})

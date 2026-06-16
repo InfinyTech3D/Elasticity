@@ -13,12 +13,12 @@ namespace elasticity
 {
 
 template <class TDataTypes, class TElementType>
-class ElementHyperelasticityFEMForceField :
+class HyperelasticityFEMForceField :
     public sofa::component::solidmechanics::fem::elastic::FEMForceField<TDataTypes, TElementType>
 {
 public:
     SOFA_CLASS(
-        SOFA_TEMPLATE2(ElementHyperelasticityFEMForceField, TDataTypes, TElementType),
+        SOFA_TEMPLATE2(HyperelasticityFEMForceField, TDataTypes, TElementType),
         SOFA_TEMPLATE2(sofa::component::solidmechanics::fem::elastic::FEMForceField, TDataTypes, TElementType));
 
     using DataTypes = TDataTypes;
@@ -132,16 +132,16 @@ protected:
         const sofa::VecDeriv_t<TDataTypes>& dx) override;
 };
 
-#if !defined(ELASTICITY_COMPONENT_ELEMENT_HYPERLASTICITY_FEM_FORCE_FIELD_CPP)
-template class ELASTICITY_API ElementHyperelasticityFEMForceField<sofa::defaulttype::Vec1Types, sofa::geometry::Edge>;
-template class ELASTICITY_API ElementHyperelasticityFEMForceField<sofa::defaulttype::Vec2Types, sofa::geometry::Edge>;
-template class ELASTICITY_API ElementHyperelasticityFEMForceField<sofa::defaulttype::Vec3Types, sofa::geometry::Edge>;
-template class ELASTICITY_API ElementHyperelasticityFEMForceField<sofa::defaulttype::Vec2Types, sofa::geometry::Triangle>;
-template class ELASTICITY_API ElementHyperelasticityFEMForceField<sofa::defaulttype::Vec3Types, sofa::geometry::Triangle>;
-template class ELASTICITY_API ElementHyperelasticityFEMForceField<sofa::defaulttype::Vec2Types, sofa::geometry::Quad>;
-template class ELASTICITY_API ElementHyperelasticityFEMForceField<sofa::defaulttype::Vec3Types, sofa::geometry::Quad>;
-template class ELASTICITY_API ElementHyperelasticityFEMForceField<sofa::defaulttype::Vec3Types, sofa::geometry::Tetrahedron>;
-template class ELASTICITY_API ElementHyperelasticityFEMForceField<sofa::defaulttype::Vec3Types, sofa::geometry::Hexahedron>;
+#if !defined(ELASTICITY_COMPONENT_HYPERLASTICITY_FEM_FORCE_FIELD_CPP)
+template class ELASTICITY_API HyperelasticityFEMForceField<sofa::defaulttype::Vec1Types, sofa::geometry::Edge>;
+template class ELASTICITY_API HyperelasticityFEMForceField<sofa::defaulttype::Vec2Types, sofa::geometry::Edge>;
+template class ELASTICITY_API HyperelasticityFEMForceField<sofa::defaulttype::Vec3Types, sofa::geometry::Edge>;
+template class ELASTICITY_API HyperelasticityFEMForceField<sofa::defaulttype::Vec2Types, sofa::geometry::Triangle>;
+template class ELASTICITY_API HyperelasticityFEMForceField<sofa::defaulttype::Vec3Types, sofa::geometry::Triangle>;
+template class ELASTICITY_API HyperelasticityFEMForceField<sofa::defaulttype::Vec2Types, sofa::geometry::Quad>;
+template class ELASTICITY_API HyperelasticityFEMForceField<sofa::defaulttype::Vec3Types, sofa::geometry::Quad>;
+template class ELASTICITY_API HyperelasticityFEMForceField<sofa::defaulttype::Vec3Types, sofa::geometry::Tetrahedron>;
+template class ELASTICITY_API HyperelasticityFEMForceField<sofa::defaulttype::Vec3Types, sofa::geometry::Hexahedron>;
 #endif
 
 }  // namespace elasticity

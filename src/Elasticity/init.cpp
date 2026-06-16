@@ -5,10 +5,7 @@
 namespace elasticity
 {
 
-extern void registerCorotationalFEMForceField(sofa::core::ObjectFactory* factory);
-extern void registerElementHyperelasticityFEMForceField(sofa::core::ObjectFactory* factory);
 extern void registerHyperelasticityFEMForceField(sofa::core::ObjectFactory* factory);
-extern void registerLinearSmallStrainFEMForceField(sofa::core::ObjectFactory* factory);
 extern void registerStVenantKirchhoffMaterial(sofa::core::ObjectFactory* factory);
 extern void registerNeoHookeanMaterial(sofa::core::ObjectFactory* factory);
 extern void registerMooneyRivlinMaterial(sofa::core::ObjectFactory* factory);
@@ -57,10 +54,7 @@ extern "C"
 
     ELASTICITY_API void registerObjects(sofa::core::ObjectFactory* factory)
     {
-        elasticity::registerCorotationalFEMForceField(factory);
-        elasticity::registerElementHyperelasticityFEMForceField(factory);
         elasticity::registerHyperelasticityFEMForceField(factory);
-        elasticity::registerLinearSmallStrainFEMForceField(factory);
         elasticity::registerStVenantKirchhoffMaterial(factory);
         elasticity::registerNeoHookeanMaterial(factory);
         elasticity::registerIncompressibleMooneyRivlinMaterial(factory);

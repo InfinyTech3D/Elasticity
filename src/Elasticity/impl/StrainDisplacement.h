@@ -1,5 +1,5 @@
 #pragma once
-#include <Elasticity/component/ElementHyperelasticityFEMForceField.h>
+#include <Elasticity/component/HyperelasticityFEMForceField.h>
 #include <sofa/core/trait/DataTypes.h>
 #include <sofa/type/Mat.h>
 
