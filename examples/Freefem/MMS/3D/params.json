@@ -2,13 +2,14 @@
     "length": 1.0,
     "youngModulus": 1e6,
     "reference": {
-        "nx": 6,
+        "nx": 20,
         "nu": 0.3
     },
     "convergence": {
         "nu_values": [0.0, 0.3, 0.49],
         "nx_values": {
-            "sinus_neumann": [4, 6, 8, 12, 16]
+            "sinus_neumann": [4, 6, 8, 12, 16],
+             "sinus_corotational": [4, 6, 8, 12, 20] 
         }
     }
 }
