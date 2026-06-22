@@ -53,11 +53,14 @@ def _bar_force_compute(f_body, quadrature):
     return compute
 
 
-def build_bar_scene(root, mms, E_eff, nx):
+def build_bar_scene(root, mms, E_eff, nx,
+                    force_field="LinearSmallStrainFEMForceField"):
     """Populate root with a static 1D bar scene on the non-dimensional domain [0,1].
 
     BodyForce is assembled after init by BodyForceAssembler. BCs: Dirichlet at
     x=0, Neumann `mms.traction_bc(E_eff)` at x=1.
+
+    force_field : name of the FEM force field to test
     """
     root.addObject('RequiredPlugin', pluginName=[
         "Elasticity",
@@ -103,7 +106,7 @@ def build_bar_scene(root, mms, E_eff, nx):
                          name="dofs",
                          template="Vec1d")
 
-    Bar.addObject('LinearSmallStrainFEMForceField',
+    Bar.addObject(force_field,
                   name="FEM",
                   template="Vec1d",
                   youngModulus=E_eff,
@@ -130,15 +133,16 @@ def case_scene(mms):
     """Return a `createScene(rootNode)` bound to this MMS case."""
     def createScene(rootNode):
         cfg = load_params()
-        build_bar_scene(rootNode, mms, cfg["E_eff"], cfg["reference"]["nx"])
+        build_bar_scene(rootNode, mms, cfg["E_eff"], cfg["reference"]["nx"],
+                        force_field=cfg["forceField"])
         return rootNode
     return createScene
 
 
-def solve_bar(mms, E_eff, nx):
+def solve_bar(mms, E_eff, nx, force_field="LinearSmallStrainFEMForceField"):
     """Build, run one static step, and return a BarSolution1D snapshot."""
     root = Sofa.Core.Node("root")
-    build_bar_scene(root, mms, E_eff, nx)
+    build_bar_scene(root, mms, E_eff, nx, force_field=force_field)
     Sofa.Simulation.init(root)
     Sofa.Simulation.animate(root, root.dt.value)
     Bar   = root.Bar
@@ -180,7 +184,8 @@ def plot_solution(case, x, u_h, u_ex, label_ex):
 def run_reference_scene(mms):
     """Solve one MMS case at the reference mesh, write the solution table and plot."""
     cfg = load_params()
-    sol = solve_bar(mms, cfg["E_eff"], cfg["reference"]["nx"])
+    sol = solve_bar(mms, cfg["E_eff"], cfg["reference"]["nx"],
+                    force_field=cfg["forceField"])
     l2  = l2_error_1d(sol.x0, sol.edges, sol.u_h, mms.u_ex, L2_QUADRATURE_1D)
     h1  = h1_semi_error_1d(sol.x0, sol.edges, sol.u_h, mms.du_ex, H1_QUADRATURE_1D)
     write_solution_table(f"solution_{mms.name}", sol.x0, sol.u_h, mms.u_ex,

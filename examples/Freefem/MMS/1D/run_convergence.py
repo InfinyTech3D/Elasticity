@@ -24,7 +24,8 @@ if __name__ == "__main__":
         stem = f"{mms.name}_convergence"
         hs, errors = run_convergence_series(
             nx_values  = cfg["convergence"]["nx_values"][mms.name],
-            run_fn     = lambda nx, _m=mms: solve_bar(_m, cfg["E_eff"], nx),
+            run_fn     = lambda nx, _m=mms: solve_bar(
+                _m, cfg["E_eff"], nx, force_field=cfg["forceField"]),
             h_fn       = lambda nx: 1.0 / (nx - 1),
             error_fns  = {
                 "L2": lambda sol, _m=mms: l2_error_1d(

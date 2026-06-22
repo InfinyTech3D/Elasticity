@@ -1,6 +1,7 @@
 {
     "length": 1.0,
     "youngModulus": 1e6,
+    "forceField": "LinearSmallStrainFEMForceField",
     "reference": {
         "nx": 20,
         "nu": 0.0,

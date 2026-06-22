@@ -67,11 +67,13 @@ def _beam_force_compute(element, mms, L, E, nu, nx, ny, dim):
     return compute
 
 def build_beam_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
-                     nx=10, ny=10, with_visual=True, dim="2d"):
+                     nx=10, ny=10, with_visual=True, dim="2d",
+                     force_field="LinearSmallStrainFEMForceField"):
     """Build a SOFA scene for `mms` on the 2D `element` strategy.
 
     dim : "2d" → Vec2d template / plane stress
           "3d" → Vec3d template / plane strain (z coordinate fixed at 0)
+    force_field : name of the FEM force field to test
     Returns (dofs, topology). Nodes and connectivity become available
     after `Sofa.Simulation.init(root)` runs, via
     `dofs.rest_position.array()` and `element.read_connectivity(topology)`.
@@ -125,7 +127,7 @@ def build_beam_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
 
     topology = element.add_topology(Beam)
 
-    Beam.addObject("LinearSmallStrainFEMForceField", name="FEM", template=tmpl,
+    Beam.addObject(force_field, name="FEM", template=tmpl,
                    youngModulus=E, poissonRatio=nu, topology="@topology")
 
     mms.apply_bcs(Beam, nodes_2d, L, dim)
@@ -150,11 +152,13 @@ def build_beam_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
 # Simulation runner
 # ─────────────────────────────────────────────────────────────────────────────
 
-def solve_beam(elem, mms, L, E, nu, nx, ny, dim="2d"):
+def solve_beam(elem, mms, L, E, nu, nx, ny, dim="2d",
+               force_field="LinearSmallStrainFEMForceField"):
     """Build, init, and run one static step. Returns a BeamSolution2D snapshot."""
     root = Sofa.Core.Node("root")
     dofs, topology = build_beam_scene(
-        root, mms, elem, L=L, E=E, nu=nu, nx=nx, ny=ny, with_visual=False, dim=dim
+        root, mms, elem, L=L, E=E, nu=nu, nx=nx, ny=ny, with_visual=False, dim=dim,
+        force_field=force_field
     )
     Sofa.Simulation.init(root)
     # Read topology back from SOFA now that init has populated it.
@@ -246,9 +250,10 @@ def run_reference_scene(elem, mms):
     L, E    = cfg["length"], cfg["youngModulus"]
     nu, dim = ref["nu"], ref["dim"]
     nx = ny = ref["nx"]
+    ff      = cfg["forceField"]
     hyp     = "plane strain" if dim == "3d" else "plane stress"
 
-    sol = solve_beam(elem, mms, L, E, nu, nx, ny, dim=dim)
+    sol = solve_beam(elem, mms, L, E, nu, nx, ny, dim=dim, force_field=ff)
     l2  = elem.compute_l2(sol, mms, L)
     h1  = elem.compute_h1(sol, mms, L)
 
@@ -281,6 +286,7 @@ def case_scene(mms, element):
         build_beam_scene(rootNode, mms, element,
                          L=cfg["length"], E=cfg["youngModulus"],
                          nu=ref["nu"], nx=ref["nx"], ny=ref["nx"],
-                         with_visual=True, dim=ref["dim"])
+                         with_visual=True, dim=ref["dim"],
+                         force_field=cfg["forceField"])
         return rootNode
     return createScene

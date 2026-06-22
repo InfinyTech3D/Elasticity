@@ -56,12 +56,15 @@ def _solid_force_compute(element, mms, L, E, nu, nx, ny, nz):
     return compute
 
 def build_solid_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
-                      nx=6, ny=6, nz=6, with_visual=True):
+                      nx=6, ny=6, nz=6, with_visual=True,
+                      force_field="LinearSmallStrainFEMForceField"):
     """Build a SOFA scene for `mms` on the 3D `element` strategy.
 
     Returns (dofs, topology). Nodes and connectivity become available
     after `Sofa.Simulation.init(root)` runs, via
     `dofs.rest_position.array()` and `element.read_connectivity(topology)`.
+
+    force_field : name of the FEM force field to test
     """
     rootNode.addObject("RequiredPlugin", pluginName=[
         "Elasticity",
@@ -106,7 +109,7 @@ def build_solid_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
 
     topology = element.add_topology(Solid)
 
-    Solid.addObject("LinearSmallStrainFEMForceField", name="FEM", template="Vec3d",
+    Solid.addObject(force_field, name="FEM", template="Vec3d",
                     youngModulus=E, poissonRatio=nu, topology="@topology")
 
     mms.apply_bcs(Solid, nodes_3d, L)
@@ -130,12 +133,13 @@ def build_solid_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
 # Simulation runner
 # ─────────────────────────────────────────────────────────────────────────────
 
-def solve_solid(elem, mms, L, E, nu, nx, ny, nz):
+def solve_solid(elem, mms, L, E, nu, nx, ny, nz,
+                force_field="LinearSmallStrainFEMForceField"):
     """Build, init, and run one static step. Returns a SolidSolution3D snapshot."""
     root = Sofa.Core.Node("root")
     dofs, topology = build_solid_scene(
         root, mms, elem, L=L, E=E, nu=nu,
-        nx=nx, ny=ny, nz=nz, with_visual=False
+        nx=nx, ny=ny, nz=nz, with_visual=False, force_field=force_field
     )
     Sofa.Simulation.init(root)
     nodes_3d = dofs.rest_position.array().copy()
@@ -265,8 +269,9 @@ def run_reference_scene(elem, mms):
     L, E = cfg["length"], cfg["youngModulus"]
     nu   = ref["nu"]
     nx = ny = nz = ref["nx"]
+    ff   = cfg["forceField"]
 
-    sol = solve_solid(elem, mms, L, E, nu, nx, ny, nz)
+    sol = solve_solid(elem, mms, L, E, nu, nx, ny, nz, force_field=ff)
     l2  = elem.compute_l2(sol, mms, L)
     h1  = elem.compute_h1(sol, mms, L)
 
@@ -300,6 +305,6 @@ def case_scene(mms, element):
                           L=cfg["length"], E=cfg["youngModulus"],
                           nu=ref["nu"],
                           nx=ref["nx"], ny=ref["nx"], nz=ref["nx"],
-                          with_visual=True)
+                          with_visual=True, force_field=cfg["forceField"])
         return rootNode
     return createScene
