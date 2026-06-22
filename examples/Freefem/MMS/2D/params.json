@@ -1,9 +1,9 @@
 {
     "length": 1.0,
     "youngModulus": 1e6,
-    "forceField": "LinearSmallStrainFEMForceField",
+    "forceField": "CorotationalFEMForceField",
     "reference": {
-        "nx": 20,
+        "nx": 5,
         "nu": 0.0,
         "dim": "2d"
     },
