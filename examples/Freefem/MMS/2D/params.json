@@ -2,6 +2,12 @@
     "length": 1.0,
     "youngModulus": 1e6,
     "forceField": "CorotationalFEMForceField",
+    "linearSolver": {
+        "type": "SparseLDLSolver",
+        "parameters": {
+            "template": "CompressedRowSparseMatrixd"
+        }
+    },
     "reference": {
         "nx": 5,
         "nu": 0.0,

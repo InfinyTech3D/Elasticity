@@ -19,8 +19,8 @@ from convergence import run_convergence_series
 from output      import plot_convergence
 
 
-def convergence_study(elem_specs, mms, L, E, nu, nx_values, dim="2d",
-                      force_field="LinearSmallStrainFEMForceField"):
+def convergence_study(elem_specs, mms, L, E, nu, nx_values, force_field,
+                      linear_solver, dim="2d"):
     """
     Run a convergence series for each element type in elem_specs, write a
     per-(element) text table, and one shared plot with L²/H¹ for every
@@ -28,7 +28,8 @@ def convergence_study(elem_specs, mms, L, E, nu, nx_values, dim="2d",
 
     elem_specs : list of dicts with keys 'elem', 'label', 'l2_style', 'h1_style'
     dim        : "2d" (plane stress) or "3d" (plane strain)
-    force_field : name of the FEM force field to test
+    force_field   : name of the FEM force field to test
+    linear_solver : dict {"type": <name>, "parameters": {...}} of the linear solver
     """
     hyp = "plane strain" if dim == "3d" else "plane stress"
     print(f"\n  PoissonRatio = {nu}  ({hyp})", flush=True)
@@ -42,7 +43,8 @@ def convergence_study(elem_specs, mms, L, E, nu, nx_values, dim="2d",
         hs, errors = run_convergence_series(
             nx_values  = nx_values,
             run_fn     = lambda nx, _e=elem: solve_beam(
-                _e, mms, L, E, nu, nx, nx, dim=dim, force_field=force_field),
+                _e, mms, L, E, nu, nx, nx,
+                force_field=force_field, linear_solver=linear_solver, dim=dim),
             h_fn       = lambda nx: L / (nx - 1),
             error_fns  = {
                 "L2": lambda sol, _e=elem: _e.compute_l2(sol, mms, L),
@@ -69,6 +71,7 @@ if __name__ == "__main__":
     L    = cfg["length"]
     E    = cfg["youngModulus"]
     ff   = cfg["forceField"]
+    ls   = cfg["linearSolver"]
     conv = cfg["convergence"]
 
     specs = [
@@ -84,5 +87,5 @@ if __name__ == "__main__":
         print(f"\n== {mms.name} ==")
         for DIM in conv["dim_values"]:
             for nu in conv["nu_values"]:
-                convergence_study(specs, mms, L, E, nu, nx_vals, dim=DIM,
-                                  force_field=ff)
+                convergence_study(specs, mms, L, E, nu, nx_vals,
+                                  force_field=ff, linear_solver=ls, dim=DIM)
