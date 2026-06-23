@@ -55,22 +55,24 @@ def _solid_force_compute(element, mms, L, E, nu, nx, ny, nz):
             nodes, conn, mms, L, E, nu, nx, ny, nz)
     return compute
 
-def build_solid_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
-                      nx=6, ny=6, nz=6, with_visual=True,
-                      force_field="LinearSmallStrainFEMForceField"):
+def build_solid_scene(rootNode, mms, element, force_field, linear_solver,
+                      L=1.0, E=1e6, nu=0.3,
+                      nx=6, ny=6, nz=6, with_visual=True):
     """Build a SOFA scene for `mms` on the 3D `element` strategy.
 
     Returns (dofs, topology). Nodes and connectivity become available
     after `Sofa.Simulation.init(root)` runs, via
     `dofs.rest_position.array()` and `element.read_connectivity(topology)`.
 
-    force_field : name of the FEM force field to test
+    force_field   : name of the FEM force field to test
+    linear_solver : dict {"type": <name>, "parameters": {...}} of the linear solver
     """
     rootNode.addObject("RequiredPlugin", pluginName=[
         "Elasticity",
         "Sofa.Component.Constraint.Projective",
         "Sofa.Component.Engine.Select",
         "Sofa.Component.LinearSolver.Direct",
+        "Sofa.Component.LinearSolver.Iterative",
         "Sofa.Component.MechanicalLoad",
         "Sofa.Component.ODESolver.Backward",
         "Sofa.Component.StateContainer",
@@ -100,8 +102,8 @@ def build_solid_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
                     maxNbIterationsNewton=1,
                     absoluteResidualStoppingThreshold=1e-10,
                     printLog=False)
-    Solid.addObject("SparseLDLSolver", name="linearSolver",
-                    template="CompressedRowSparseMatrixd")
+    Solid.addObject(linear_solver["type"], name="linearSolver",
+                    **linear_solver["parameters"])
 
     dofs = Solid.addObject("MechanicalObject", name="dofs", template="Vec3d",
                            position=nodes_3d.tolist(),
@@ -133,13 +135,13 @@ def build_solid_scene(rootNode, mms, element, L=1.0, E=1e6, nu=0.3,
 # Simulation runner
 # ─────────────────────────────────────────────────────────────────────────────
 
-def solve_solid(elem, mms, L, E, nu, nx, ny, nz,
-                force_field="LinearSmallStrainFEMForceField"):
+def solve_solid(elem, mms, L, E, nu, nx, ny, nz, force_field, linear_solver):
     """Build, init, and run one static step. Returns a SolidSolution3D snapshot."""
     root = Sofa.Core.Node("root")
     dofs, topology = build_solid_scene(
         root, mms, elem, L=L, E=E, nu=nu,
-        nx=nx, ny=ny, nz=nz, with_visual=False, force_field=force_field
+        nx=nx, ny=ny, nz=nz, with_visual=False,
+        force_field=force_field, linear_solver=linear_solver
     )
     Sofa.Simulation.init(root)
     nodes_3d = dofs.rest_position.array().copy()
@@ -270,8 +272,10 @@ def run_reference_scene(elem, mms):
     nu   = ref["nu"]
     nx = ny = nz = ref["nx"]
     ff   = cfg["forceField"]
+    ls   = cfg["linearSolver"]
 
-    sol = solve_solid(elem, mms, L, E, nu, nx, ny, nz, force_field=ff)
+    sol = solve_solid(elem, mms, L, E, nu, nx, ny, nz,
+                      force_field=ff, linear_solver=ls)
     l2  = elem.compute_l2(sol, mms, L)
     h1  = elem.compute_h1(sol, mms, L)
 
@@ -305,6 +309,7 @@ def case_scene(mms, element):
                           L=cfg["length"], E=cfg["youngModulus"],
                           nu=ref["nu"],
                           nx=ref["nx"], ny=ref["nx"], nz=ref["nx"],
-                          with_visual=True, force_field=cfg["forceField"])
+                          with_visual=True, force_field=cfg["forceField"],
+                          linear_solver=cfg["linearSolver"])
         return rootNode
     return createScene

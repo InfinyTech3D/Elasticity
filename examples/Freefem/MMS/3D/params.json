@@ -2,6 +2,15 @@
     "length": 1.0,
     "youngModulus": 1e6,
     "forceField": "LinearSmallStrainFEMForceField",
+    "linearSolver": {
+        "type": "CGLinearSolver",
+        "parameters": {
+            "template": "CompressedRowSparseMatrixd",
+            "iterations": 1000,
+            "tolerance": 1e-15,
+            "threshold": 1e-15
+        }
+    },
     "reference": {
         "nx": 6,
         "nu": 0.3

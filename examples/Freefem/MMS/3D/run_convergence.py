@@ -18,7 +18,7 @@ from output      import plot_convergence
 
 
 def convergence_study(elem_specs, mms, L, E, nu, nx_values,
-                      force_field="LinearSmallStrainFEMForceField"):
+                      force_field, linear_solver):
     """
     Run a convergence series for each element type in elem_specs, write a
     per-(element) text table, and one shared plot with L²/H¹ for every
@@ -38,7 +38,8 @@ def convergence_study(elem_specs, mms, L, E, nu, nx_values,
         hs, errors = run_convergence_series(
             nx_values  = nx_values,
             run_fn     = lambda nx, _e=elem: solve_solid(
-                _e, mms, L, E, nu, nx, nx, nx, force_field=force_field),
+                _e, mms, L, E, nu, nx, nx, nx,
+                force_field=force_field, linear_solver=linear_solver),
             h_fn       = lambda nx: L / (nx - 1),
             error_fns  = {
                 "L2": lambda sol, _e=elem: _e.compute_l2(sol, mms, L),
@@ -65,6 +66,7 @@ if __name__ == "__main__":
     L    = cfg["length"]
     E    = cfg["youngModulus"]
     ff   = cfg["forceField"]
+    ls   = cfg["linearSolver"]
     conv = cfg["convergence"]
 
     specs = [
@@ -76,4 +78,5 @@ if __name__ == "__main__":
         nx_vals = conv["nx_values"][mms.name]
         print(f"\n== {mms.name} ==")
         for nu in conv["nu_values"]:
-            convergence_study(specs, mms, L, E, nu, nx_vals, force_field=ff)
+            convergence_study(specs, mms, L, E, nu, nx_vals,
+                              force_field=ff, linear_solver=ls)
