@@ -53,19 +53,20 @@ def _bar_force_compute(f_body, quadrature):
     return compute
 
 
-def build_bar_scene(root, mms, E_eff, nx,
-                    force_field="LinearSmallStrainFEMForceField"):
+def build_bar_scene(root, mms, E_eff, nx, force_field, linear_solver):
     """Populate root with a static 1D bar scene on the non-dimensional domain [0,1].
 
     BodyForce is assembled after init by BodyForceAssembler. BCs: Dirichlet at
     x=0, Neumann `mms.traction_bc(E_eff)` at x=1.
 
-    force_field : name of the FEM force field to test
+    force_field   : name of the FEM force field to test
+    linear_solver : dict {"type": <name>, "parameters": {...}} of the linear solver
     """
     root.addObject('RequiredPlugin', pluginName=[
         "Elasticity",
         "Sofa.Component.Constraint.Projective",
         "Sofa.Component.LinearSolver.Direct",
+        "Sofa.Component.LinearSolver.Iterative",
         "Sofa.Component.MechanicalLoad",
         "Sofa.Component.ODESolver.Backward",
         "Sofa.Component.StateContainer",
@@ -90,9 +91,9 @@ def build_bar_scene(root, mms, E_eff, nx,
                   maxNbIterationsNewton=10,
                   absoluteResidualStoppingThreshold=1e-10,
                   printLog=False)
-    Bar.addObject('SparseLDLSolver',
+    Bar.addObject(linear_solver["type"],
                   name="linearSolver",
-                  template="CompressedRowSparseMatrixd")
+                  **linear_solver["parameters"])
     Bar.addObject('StaticSolver',
                   name="staticSolver",
                   newtonSolver="@newtonSolver",
@@ -134,15 +135,17 @@ def case_scene(mms):
     def createScene(rootNode):
         cfg = load_params()
         build_bar_scene(rootNode, mms, cfg["E_eff"], cfg["reference"]["nx"],
-                        force_field=cfg["forceField"])
+                        force_field=cfg["forceField"],
+                        linear_solver=cfg["linearSolver"])
         return rootNode
     return createScene
 
 
-def solve_bar(mms, E_eff, nx, force_field="LinearSmallStrainFEMForceField"):
+def solve_bar(mms, E_eff, nx, force_field, linear_solver):
     """Build, run one static step, and return a BarSolution1D snapshot."""
     root = Sofa.Core.Node("root")
-    build_bar_scene(root, mms, E_eff, nx, force_field=force_field)
+    build_bar_scene(root, mms, E_eff, nx, force_field=force_field,
+                    linear_solver=linear_solver)
     Sofa.Simulation.init(root)
     Sofa.Simulation.animate(root, root.dt.value)
     Bar   = root.Bar
@@ -185,7 +188,8 @@ def run_reference_scene(mms):
     """Solve one MMS case at the reference mesh, write the solution table and plot."""
     cfg = load_params()
     sol = solve_bar(mms, cfg["E_eff"], cfg["reference"]["nx"],
-                    force_field=cfg["forceField"])
+                    force_field=cfg["forceField"],
+                    linear_solver=cfg["linearSolver"])
     l2  = l2_error_1d(sol.x0, sol.edges, sol.u_h, mms.u_ex, L2_QUADRATURE_1D)
     h1  = h1_semi_error_1d(sol.x0, sol.edges, sol.u_h, mms.du_ex, H1_QUADRATURE_1D)
     write_solution_table(f"solution_{mms.name}", sol.x0, sol.u_h, mms.u_ex,
