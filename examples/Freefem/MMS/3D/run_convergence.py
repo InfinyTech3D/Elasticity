@@ -5,7 +5,7 @@ plots into the shared `results/` directory. Mirrors the 2D driver minus the
 plane-stress / plane-strain `dim` axis (3D has a single constitutive branch).
 """
 
-from sinus_neumann import mms as sinus_neumann_mms
+from sinusoidal import mms as sinusoidal_mms
 
 from solid import (
     RESULTS_DIR,
@@ -74,7 +74,7 @@ if __name__ == "__main__":
          "l2_style": "bo-", "h1_style": "rs--"},
     ]
 
-    for mms in (sinus_neumann_mms,):
+    for mms in (sinusoidal_mms,):
         nx_vals = conv["nx_values"][mms.name]
         print(f"\n== {mms.name} ==")
         for nu in conv["nu_values"]:
