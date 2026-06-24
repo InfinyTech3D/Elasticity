@@ -3,12 +3,9 @@
     "youngModulus": 1e6,
     "forceField": "LinearSmallStrainFEMForceField",
     "linearSolver": {
-        "type": "CGLinearSolver",
+        "type": "SparseLDLSolver",
         "parameters": {
-            "template": "CompressedRowSparseMatrixd",
-            "iterations": 1000,
-            "tolerance": 1e-15,
-            "threshold": 1e-15
+            "template": "CompressedRowSparseMatrixd"
         }
     },
     "reference": {
@@ -18,7 +15,7 @@
     "convergence": {
         "nu_values": [0.0, 0.3, 0.49],
         "nx_values": {
-            "sinus_neumann": [50, 100, 150, 200]
+            "sinus_neumann": [10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30]
         }
     }
 }
