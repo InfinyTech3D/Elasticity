@@ -300,7 +300,7 @@ def case_scene(mms, element):
     All parameters come from params.json (top-level + `reference` block). Each
     case file exposes:
         createScene = case_scene(mms, element_hex)
-    so that `runSofa sinus_neumann.py` loads the default scene.
+    so that `runSofa sinusoidal.py` loads the default scene.
     """
     def createScene(rootNode):
         cfg = load_params()
