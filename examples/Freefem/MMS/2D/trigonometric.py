@@ -1,8 +1,8 @@
 """
 Trigonometric 2D MMS on [0,L]^2 with linear-elasticity constitutive law:
 
-    u_ex(x, y) = ( sin(pi x / L) cos(pi y / L),
-                   cos(pi x / L) sin(pi y / L) )
+    u_ex(x, y) = A * ( sin(pi x / L) cos(pi y / L),
+                       cos(pi x / L) sin(pi y / L) )
 
     sigma = lambda tr(eps) I + 2 mu eps,
     with (lambda, mu) selected per dim (plane stress vs plane strain).
@@ -16,6 +16,10 @@ from beam import (case_scene, run_reference_scene,
                   quad_q1_rule, tri_p1_rule)
 
 
+# Amplitude of the oscillation functions
+AMPLITUDE = 0.1
+
+
 class Trigonometric(MMSCase2D):
     name       = "trigonometric"
     plot_label = (r"$u_x = \sin(\pi x/L)\cos(\pi y/L),\ "
@@ -25,16 +29,18 @@ class Trigonometric(MMSCase2D):
     source_quadrature_tri  = staticmethod(tri_p1_rule(3))
 
     def u_ex(self, x, y, L):
+        A = AMPLITUDE
         k = np.pi / L
-        return (np.sin(k * x) * np.cos(k * y),
-                np.cos(k * x) * np.sin(k * y))
+        return (A * np.sin(k * x) * np.cos(k * y),
+                A * np.cos(k * x) * np.sin(k * y))
 
     def grad_u_ex(self, x, y, L):
+        A = AMPLITUDE
         k = np.pi / L
-        dux_dx =  k * np.cos(k * x) * np.cos(k * y)
-        dux_dy = -k * np.sin(k * x) * np.sin(k * y)
-        duy_dx = -k * np.sin(k * x) * np.sin(k * y)
-        duy_dy =  k * np.cos(k * x) * np.cos(k * y)
+        dux_dx =  A * k * np.cos(k * x) * np.cos(k * y)
+        dux_dy = -A * k * np.sin(k * x) * np.sin(k * y)
+        duy_dx = -A * k * np.sin(k * x) * np.sin(k * y)
+        duy_dy =  A * k * np.cos(k * x) * np.cos(k * y)
         return np.array([[dux_dx, dux_dy],
                          [duy_dx, duy_dy]])
 
@@ -71,6 +77,7 @@ class Trigonometric(MMSCase2D):
 
     def source(self, x, y, E, nu, L, dim):
         lam, mu = lame(E, nu, dim)
+        A  = AMPLITUDE
         k  = np.pi / L
         ux = np.sin(k * x) * np.cos(k * y)
         uy = np.cos(k * x) * np.sin(k * y)
@@ -84,7 +91,7 @@ class Trigonometric(MMSCase2D):
              + mu * (d2ux_dyy + d2uy_dxy))
         fy = -(mu * (d2ux_dxy + d2uy_dxx) + lam * d2ux_dxy
              + (lam + 2*mu) * d2uy_dyy)
-        return (fx, fy)
+        return (A * fx, A * fy)
 
 
 mms         = Trigonometric()
