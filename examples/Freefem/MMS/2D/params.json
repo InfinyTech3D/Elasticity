@@ -1,8 +1,15 @@
 {
     "length": 1.0,
     "youngModulus": 1e6,
+    "forceField": "LinearSmallStrainFEMForceField",
+    "linearSolver": {
+        "type": "SparseLDLSolver",
+        "parameters": {
+            "template": "CompressedRowSparseMatrixd"
+        }
+    },
     "reference": {
-        "nx": 20,
+        "nx": 5,
         "nu": 0.0,
         "dim": "2d"
     },
