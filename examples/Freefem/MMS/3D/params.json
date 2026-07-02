@@ -1,14 +1,21 @@
 {
     "length": 1.0,
     "youngModulus": 1e6,
+    "forceField": "LinearSmallStrainFEMForceField",
+    "linearSolver": {
+        "type": "SparseLDLSolver",
+        "parameters": {
+            "template": "CompressedRowSparseMatrixd"
+        }
+    },
     "reference": {
         "nx": 6,
         "nu": 0.3
     },
     "convergence": {
-        "nu_values": [0.0, 0.3, 0.49],
+        "nu_values": [0.3, 0.49],
         "nx_values": {
-            "sinus_neumann": [4, 6, 8, 12, 16]
+            "sinusoidal": [10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30]
         }
     }
 }

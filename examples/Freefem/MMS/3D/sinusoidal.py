@@ -26,7 +26,7 @@ SINUS_AMPLITUDE = 1e-1
 
 
 class SinusNeumann(MMSCase3D):
-    name       = "sinus_neumann"
+    name       = "sinusoidal"
     plot_label = (r"$u = A(\sin(\pi x/L)\sin(\pi y/L),\ "
                   r"\sin(\pi y/L)\sin(\pi z/L),\ "
                   r"\sin(\pi z/L)\sin(\pi x/L))$")
@@ -89,7 +89,7 @@ class SinusNeumann(MMSCase3D):
             for k, (xk, yk, zk) in enumerate(xyz):
                 if pred(xk, yk, zk):
                     return k
-            raise RuntimeError("sinus_neumann: BC corner not found")
+            raise RuntimeError("sinusoidal: BC corner not found")
 
         i_origin = find_corner(lambda x, y, z: x < eps     and y < eps     and z < eps)
         i_xL     = find_corner(lambda x, y, z: x > L - eps and y < eps     and z < eps)
