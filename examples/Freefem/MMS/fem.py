@@ -7,8 +7,8 @@ Two parallel families of routines:
   `h1_semi_error_1d`.
 
 * **Dim-agnostic vector path** used by the 2D and 3D drivers:
-  `quad_q1_rule`, `tri_p1_rule`, `hex_q1_rule` (element rules),
-  `edge_line_rule`, `quad_face_rule` (facet rules),
+  `quad_q1_rule`, `tri_p1_rule`, `hex_q1_rule`, `tet_p1_rule` (element rules),
+  `edge_line_rule`, `quad_face_rule`, `tri_face_rule` (facet rules),
   `assemble_nodal_forces`, `assemble_traction`,
   `l2_error`, `h1_semi_error`.
 
@@ -129,6 +129,22 @@ _TRI_QUADRATURE = {
 }
 
 
+# Reference-tetrahedron quadrature over {(xi,eta,zeta): >=0, xi+eta+zeta<=1}.
+# Weights sum to the reference volume 1/6; the physical weight is w_ref * 6*vol.
+# The 4-point rule is degree-2 exact (a = (5-sqrt5)/20, b = (5+3sqrt5)/20).
+_TET_A4 = (5.0 - np.sqrt(5.0)) / 20.0
+_TET_B4 = (5.0 + 3.0 * np.sqrt(5.0)) / 20.0
+_TET_QUADRATURE = {
+    1: (np.array([[1/4, 1/4, 1/4]]),
+        np.array([1/6])),
+    4: (np.array([[_TET_A4, _TET_A4, _TET_A4],
+                  [_TET_B4, _TET_A4, _TET_A4],
+                  [_TET_A4, _TET_B4, _TET_A4],
+                  [_TET_A4, _TET_A4, _TET_B4]]),
+        np.array([1/24, 1/24, 1/24, 1/24])),
+}
+
+
 # ---------------------------------------------------------------------------
 # Element rules  (consume by assemble_nodal_forces, l2_error, h1_semi_error)
 # ---------------------------------------------------------------------------
@@ -211,6 +227,38 @@ def hex_q1_rule(n_pts=2):
     return rule
 
 
+def tet_p1_rule(n_pts=4):
+    """Element rule for P1 tetrahedra: 1-point (centroid) or 4-point Gauss.
+
+    Shape gradients are constant per tet. Node order in `xe` is the canonical
+    P1 ordering — corresponds to (N0, N1, N2, N3) = (1-xi-eta-zeta, xi, eta, zeta).
+    """
+    if n_pts not in _TET_QUADRATURE:
+        raise ValueError(f"tet_p1_rule: {n_pts}-point rule not supported")
+    pts, wts = _TET_QUADRATURE[n_pts]
+
+    # Reference-coord gradients of (N0..N3) wrt (xi, eta, zeta), constant.
+    dN_ref = np.array([[-1.0, -1.0, -1.0],
+                       [ 1.0,  0.0,  0.0],
+                       [ 0.0,  1.0,  0.0],
+                       [ 0.0,  0.0,  1.0]])       # (4, 3) [a, ref-axis]
+
+    def rule(xe):
+        xe_arr = np.asarray(xe, float)            # (4, 3)
+        x0 = xe_arr[0]
+        # Jacobian columns are the edge vectors from node 0: x = x0 + J @ (xi,eta,zeta).
+        J     = np.column_stack([xe_arr[1] - x0, xe_arr[2] - x0, xe_arr[3] - x0])
+        detJ  = np.linalg.det(J)
+        vol   = abs(detJ) / 6.0
+        Jinv  = np.linalg.inv(J)
+        dN_phys = (dN_ref @ Jinv).T               # (3, 4) [d, a]
+        for (xi, eta, zeta), w_ref in zip(pts, wts):
+            N      = np.array([1.0 - xi - eta - zeta, xi, eta, zeta])
+            coords = N @ xe_arr                    # (3,)
+            yield coords, w_ref * 6.0 * vol, N, dN_phys
+    return rule
+
+
 # ---------------------------------------------------------------------------
 # Facet rules  (consumed by assemble_traction)
 # ---------------------------------------------------------------------------
@@ -262,6 +310,27 @@ def quad_face_rule(n_pts=2):
                 dA     = np.linalg.norm(np.cross(t_xi, t_eta))
                 coords = N @ xe_arr               # (3,)
                 yield coords, wi * wj * dA, N
+    return rule
+
+
+def tri_face_rule(n_pts=3):
+    """Facet rule for a 3D boundary triangle: linear shape, reference-triangle Gauss.
+
+    Yields per Gauss point on the face: (coords (3,), w, N (3,)).
+    Area via dA = ||(x1-x0) x (x2-x0)|| / 2; vertex order does not affect it.
+    """
+    if n_pts not in _TRI_QUADRATURE:
+        raise ValueError(f"tri_face_rule: {n_pts}-point rule not supported")
+    pts, wts = _TRI_QUADRATURE[n_pts]
+
+    def rule(xe):
+        xe_arr = np.asarray(xe, float)            # (3, 3)
+        x0, x1, x2 = xe_arr
+        area = 0.5 * np.linalg.norm(np.cross(x1 - x0, x2 - x0))
+        for (xi, eta), w_ref in zip(pts, wts):
+            N      = np.array([1.0 - xi - eta, xi, eta])
+            coords = N @ xe_arr                    # (3,)
+            yield coords, w_ref * 2.0 * area, N
     return rule
 
 
