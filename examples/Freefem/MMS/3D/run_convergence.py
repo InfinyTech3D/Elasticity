@@ -73,8 +73,8 @@ if __name__ == "__main__":
     specs = [
         {"elem": element_hex, "label": "Q1 hex",
          "l2_style": "bo-", "h1_style": "rs--"},
-        #{"elem": element_tet, "label": "P1 tet",
-        # "l2_style": "g^-", "h1_style": "md--"},
+        {"elem": element_tet, "label": "P1 tet",
+         "l2_style": "g^-", "h1_style": "md--"},
     ]
 
     for mms in (sinusoidal_mms,):
