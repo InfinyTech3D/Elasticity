@@ -13,10 +13,12 @@ Each strategy declares:
     compute_h1(sol, mms, L)     : H¹ semi-norm error on a solution
 
 Two `_ElementBase` classes live here — one for 2D (4 boundary edges,
-dim-dependent plane stress / plane strain) and one for 3D (6 boundary
-quads, single constitutive branch). Concrete elements (`_QuadElement`,
-`_TriElement`, `_HexElement`) subclass the matching base and pin the
-topology container choice and the rules.
+dim-dependent plane stress / plane strain) and one for 3D (six domain
+faces, single constitutive branch). The 3D base delegates the boundary
+facets to `_boundary_facet_groups` / `_facet_rule` hooks so hex uses grid
+quads and tet uses the triangulated split. Concrete elements
+(`_QuadElement`, `_TriElement`, `_HexElement`, `_TetElement`) subclass the
+matching base and pin the topology container choice and the rules.
 """
 
 import numpy as np
@@ -29,8 +31,10 @@ from fem import (
     quad_q1_rule,
     tri_p1_rule,
     hex_q1_rule,
+    tet_p1_rule,
     edge_line_rule,
     quad_face_rule,
+    tri_face_rule,
 )
 
 
@@ -72,6 +76,72 @@ def _boundary_quads(nx, ny, nz):
     zp = [(idx(i, j, nz-1), idx(i+1, j, nz-1), idx(i+1, j+1, nz-1), idx(i, j+1, nz-1))
           for j in range(ny - 1) for i in range(nx - 1)]
     return xm, xp, ym, yp, zm, zp
+
+
+# Local vertex triples for the four triangular faces of a tetrahedron.
+_TET_LOCAL_FACES = ((1, 2, 3), (0, 2, 3), (0, 1, 3), (0, 1, 2))
+
+
+def _boundary_tris_from_conn(conn, nodes):
+    """Boundary triangles of a tet mesh, grouped by the six domain faces.
+
+    A triangular face used by exactly one tetrahedron is a boundary face
+    (interior faces are shared by two tets). This reads the *actual* mesh
+    connectivity, so it makes no assumption about how SOFA's
+    `Hexa2TetraTopologicalMapping` orients its split — the diagonal is
+    whatever SOFA produced, and its true boundary faces are exactly these
+    once-used triangles. Each boundary face lies fully on one cube face; it
+    is classified by that plane and assigned the (geometric) outward normal.
+
+    Returns a list of (facets, normal) where `facets` is an (n, 3) int array
+    and `normal` is a unit outward-normal 3-tuple — the shape the base
+    `compute_nodal_forces` traction loop consumes.
+    """
+    conn = np.asarray(conn)
+
+    # Count how many tets each triangular face (as a sorted node triple) touches;
+    # keep one representative ordering per face for later coordinate lookup.
+    face_count = {}
+    face_nodes = {}
+    for tet in conn:
+        for a, b, c in _TET_LOCAL_FACES:
+            tri = (int(tet[a]), int(tet[b]), int(tet[c]))
+            key = tuple(sorted(tri))
+            face_count[key] = face_count.get(key, 0) + 1
+            face_nodes.setdefault(key, tri)
+
+    boundary = [face_nodes[k] for k, n in face_count.items() if n == 1]
+
+    xyz = np.asarray(nodes)[:, :3]
+    lo, hi = xyz.min(axis=0), xyz.max(axis=0)
+    tol = 1e-7 * float(np.max(hi - lo))
+
+    planes = {(-1.0, 0.0, 0.0): [], (+1.0, 0.0, 0.0): [],
+              (0.0, -1.0, 0.0): [], (0.0, +1.0, 0.0): [],
+              (0.0, 0.0, -1.0): [], (0.0, 0.0, +1.0): []}
+    for tri in boundary:
+        p = xyz[list(tri)]                        # (3, 3)
+        matched = False
+        for axis in range(3):
+            if np.all(np.abs(p[:, axis] - lo[axis]) < tol):
+                nrm = [0.0, 0.0, 0.0]; nrm[axis] = -1.0
+            elif np.all(np.abs(p[:, axis] - hi[axis]) < tol):
+                nrm = [0.0, 0.0, 0.0]; nrm[axis] = +1.0
+            else:
+                continue
+            planes[tuple(nrm)].append(tri)
+            matched = True
+            break
+        if not matched:
+            # A boundary face that lies on no domain plane means the mesh is
+            # not the expected [0,L]^3 box tessellation — fail loudly rather
+            # than assemble an inconsistent traction.
+            raise RuntimeError(
+                "boundary triangle not on any domain face plane; "
+                "unexpected mesh geometry")
+
+    return [(np.asarray(tris, dtype=int), nrm)
+            for nrm, tris in planes.items() if tris]
 
 
 # ---------------------------------------------------------------------------
@@ -192,19 +262,16 @@ class _ElementBase3D:
             lambda x, y, z: mms.source(x, y, z, E, nu, L),
             xyz, conn, cls._source_rule(mms))
 
-        xm, xp, ym, yp, zm, zp = _boundary_quads(nx, ny, nz)
-        sides = [(xm, -1.0, 0.0, 0.0),
-                 (xp, +1.0, 0.0, 0.0),
-                 (ym,  0.0, -1.0, 0.0),
-                 (yp,  0.0, +1.0, 0.0),
-                 (zm,  0.0, 0.0, -1.0),
-                 (zp,  0.0, 0.0, +1.0)]
-        face_rule = quad_face_rule(2)
-        for quads, nrm_x, nrm_y, nrm_z in sides:
+        # Neumann tractions on the six domain faces. The boundary facets and
+        # their per-facet rule are element-specific (quads for hex, triangles
+        # for tet); the assembly loop is shared.
+        facet_rule = cls._facet_rule()
+        for facets, (nrm_x, nrm_y, nrm_z) in cls._boundary_facet_groups(
+                conn, xyz, nx, ny, nz):
             F += assemble_traction(
                 lambda x, y, z, nx=nrm_x, ny=nrm_y, nz=nrm_z:
                     mms.traction(x, y, z, nx, ny, nz, E, nu, L),
-                xyz, quads, face_rule)
+                xyz, facets, facet_rule)
         return F
 
     @classmethod
@@ -237,6 +304,22 @@ class _HexElement(_ElementBase3D):
         return rule
 
     @staticmethod
+    def _facet_rule():
+        return quad_face_rule(2)
+
+    @staticmethod
+    def _boundary_facet_groups(conn, xyz, nx, ny, nz):
+        # Structured grid: the six faces are quad lists from the grid indices;
+        # conn/xyz are unused (the hex ordering is fixed by RegularGridTopology).
+        xm, xp, ym, yp, zm, zp = _boundary_quads(nx, ny, nz)
+        return [(xm, (-1.0, 0.0, 0.0)),
+                (xp, (+1.0, 0.0, 0.0)),
+                (ym, (0.0, -1.0, 0.0)),
+                (yp, (0.0, +1.0, 0.0)),
+                (zm, (0.0, 0.0, -1.0)),
+                (zp, (0.0, 0.0, +1.0))]
+
+    @staticmethod
     def add_topology(Solid):
         topology = Solid.addObject("HexahedronSetTopologyContainer",
                                    name="topology",
@@ -250,6 +333,42 @@ class _HexElement(_ElementBase3D):
         return topology.hexahedra.array().copy()
 
 
+class _TetElement(_ElementBase3D):
+    LABEL        = "P1 tet"
+    ELEMENT_RULE = staticmethod(tet_p1_rule(4))   # used for L²/H¹ error norms
+
+    @staticmethod
+    def _source_rule(mms):
+        rule = mms.source_quadrature_tet
+        if rule is None:
+            raise ValueError(
+                f"{type(mms).__name__}.source_quadrature_tet must be set")
+        return rule
+
+    @staticmethod
+    def _facet_rule():
+        return tri_face_rule(3)
+
+    @staticmethod
+    def _boundary_facet_groups(conn, xyz, nx, ny, nz):
+        # Tet boundary faces are the true once-used triangles of the actual
+        # split — independent of the Hexa2Tetra diagonal orientation.
+        return _boundary_tris_from_conn(conn, xyz)
+
+    @staticmethod
+    def add_topology(Solid):
+        topology = Solid.addObject("TetrahedronSetTopologyContainer",
+                                   name="topology")
+        Solid.addObject("Hexa2TetraTopologicalMapping",
+                        input="@../Grid/grid", output="@topology")
+        Solid.addObject("TetrahedronSetTopologyModifier")
+        return topology
+
+    @staticmethod
+    def read_connectivity(topology):
+        return topology.tetrahedra.array().copy()
+
+
 # ---------------------------------------------------------------------------
 # Instances (one per element type)
 # ---------------------------------------------------------------------------
@@ -257,3 +376,4 @@ class _HexElement(_ElementBase3D):
 element_quad = _QuadElement()
 element_tri  = _TriElement()
 element_hex  = _HexElement()
+element_tet  = _TetElement()
