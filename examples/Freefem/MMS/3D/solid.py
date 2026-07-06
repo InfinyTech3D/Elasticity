@@ -73,6 +73,8 @@ def build_solid_scene(rootNode, mms, element, force_field, linear_solver,
         "Sofa.Component.Engine.Select",
         "Sofa.Component.LinearSolver.Direct",
         "Sofa.Component.LinearSolver.Iterative",
+        "Sofa.Component.LinearSolver.Preconditioner",
+        "Sofa.Component.LinearSystem",
         "Sofa.Component.MechanicalLoad",
         "Sofa.Component.ODESolver.Backward",
         "Sofa.Component.StateContainer",
@@ -99,11 +101,30 @@ def build_solid_scene(rootNode, mms, element, force_field, linear_solver,
     Solid = rootNode.addChild("Solid")
     Solid.addObject("StaticSolver", name="staticSolver", printLog=False)
     Solid.addObject("NewtonRaphsonSolver", name="newtonSolver",
-                    maxNbIterationsNewton=1,
+                    maxNbIterationsNewton=10,
                     absoluteResidualStoppingThreshold=1e-10,
-                    printLog=False)
-    Solid.addObject(linear_solver["type"], name="linearSolver",
-                    **linear_solver["parameters"])
+                    relativeSuccessiveStoppingThreshold=1e-12,
+                    relativeInitialStoppingThreshold=1e-12,
+                    printLog=True)
+
+    if linear_solver["preconditioner"]:
+        preconditioner = linear_solver["preconditioner"]
+        Solid.addObject("PreconditionedMatrixFreeSystem"
+            , name="solverSystem"
+            , template="GraphScattered"
+            , preconditionerSystem="@precondSystem")
+        Solid.addObject(linear_solver["type"]
+            , name="linearSolver"
+            , **linear_solver["parameters"]
+            , printLog=True)
+
+        Solid.addObject("MatrixLinearSystem"
+            , name="precondSystem"
+            , template="CompressedRowSparseMatrixd")
+        Solid.addObject(preconditioner, name="precond", printLog=True)
+
+    else:
+        Solid.addObject(linear_solver["type"], name="linearSolver", **linear_solver["parameters"])
 
     dofs = Solid.addObject("MechanicalObject", name="dofs", template="Vec3d",
                            position=nodes_3d.tolist(),
@@ -112,7 +133,9 @@ def build_solid_scene(rootNode, mms, element, force_field, linear_solver,
     topology = element.add_topology(Solid)
 
     Solid.addObject(force_field, name="FEM", template="Vec3d",
-                    youngModulus=E, poissonRatio=nu, topology="@topology")
+                    youngModulus=E, poissonRatio=nu, topology="@topology",
+                    computeForceStrategy="parallel", computeForceDerivStrategy="parallel")
+
 
     mms.apply_bcs(Solid, nodes_3d, L)
 
@@ -143,7 +166,7 @@ def solve_solid(elem, mms, L, E, nu, nx, ny, nz, force_field, linear_solver):
         nx=nx, ny=ny, nz=nz, with_visual=False,
         force_field=force_field, linear_solver=linear_solver
     )
-    Sofa.Simulation.init(root)
+    Sofa.Simulation.initRoot(root)
     nodes_3d = dofs.rest_position.array().copy()
     conn     = elem.read_connectivity(topology)
     pos0     = dofs.position.array().copy()

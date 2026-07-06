@@ -108,8 +108,8 @@ class SinusNeumann(MMSCase3D):
 
 
 mms         = SinusNeumann()
-createScene = case_scene(mms, element_hex)
+createScene = case_scene(mms, element_tet)
 
 
 if __name__ == "__main__":
-    run_reference_scene(element_hex, mms)
+    run_reference_scene(element_tet, mms)

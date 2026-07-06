@@ -360,7 +360,8 @@ class _TetElement(_ElementBase3D):
         topology = Solid.addObject("TetrahedronSetTopologyContainer",
                                    name="topology")
         Solid.addObject("Hexa2TetraTopologicalMapping",
-                        input="@../Grid/grid", output="@topology")
+                        input="@../Grid/grid", output="@topology",
+                        swapping=True)
         Solid.addObject("TetrahedronSetTopologyModifier")
         return topology
 
