@@ -23,7 +23,7 @@ from solid import (case_scene, run_reference_scene,
                    element_tet, tet_p1_rule)
 
 
-SINUS_AMPLITUDE = 1e-2
+SINUS_AMPLITUDE = 1e-1
 
 
 class SinusNeumann(MMSCase3D):
