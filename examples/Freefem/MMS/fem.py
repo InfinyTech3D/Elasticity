@@ -229,9 +229,6 @@ def hex_q1_rule(n_pts=2):
 
 def tet_p1_rule(n_pts=4):
     """Element rule for P1 tetrahedra: 1-point (centroid) or 4-point Gauss.
-
-    Shape gradients are constant per tet. Node order in `xe` is the canonical
-    P1 ordering — corresponds to (N0, N1, N2, N3) = (1-xi-eta-zeta, xi, eta, zeta).
     """
     if n_pts not in _TET_QUADRATURE:
         raise ValueError(f"tet_p1_rule: {n_pts}-point rule not supported")

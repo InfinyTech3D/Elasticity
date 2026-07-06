@@ -84,18 +84,6 @@ _TET_LOCAL_FACES = ((1, 2, 3), (0, 2, 3), (0, 1, 3), (0, 1, 2))
 
 def _boundary_tris_from_conn(conn, nodes):
     """Boundary triangles of a tet mesh, grouped by the six domain faces.
-
-    A triangular face used by exactly one tetrahedron is a boundary face
-    (interior faces are shared by two tets). This reads the *actual* mesh
-    connectivity, so it makes no assumption about how SOFA's
-    `Hexa2TetraTopologicalMapping` orients its split — the diagonal is
-    whatever SOFA produced, and its true boundary faces are exactly these
-    once-used triangles. Each boundary face lies fully on one cube face; it
-    is classified by that plane and assigned the (geometric) outward normal.
-
-    Returns a list of (facets, normal) where `facets` is an (n, 3) int array
-    and `normal` is a unit outward-normal 3-tuple — the shape the base
-    `compute_nodal_forces` traction loop consumes.
     """
     conn = np.asarray(conn)
 
@@ -134,8 +122,7 @@ def _boundary_tris_from_conn(conn, nodes):
             break
         if not matched:
             # A boundary face that lies on no domain plane means the mesh is
-            # not the expected [0,L]^3 box tessellation — fail loudly rather
-            # than assemble an inconsistent traction.
+            # not the expected [0,L]^3 box tessellation
             raise RuntimeError(
                 "boundary triangle not on any domain face plane; "
                 "unexpected mesh geometry")
@@ -262,9 +249,6 @@ class _ElementBase3D:
             lambda x, y, z: mms.source(x, y, z, E, nu, L),
             xyz, conn, cls._source_rule(mms))
 
-        # Neumann tractions on the six domain faces. The boundary facets and
-        # their per-facet rule are element-specific (quads for hex, triangles
-        # for tet); the assembly loop is shared.
         facet_rule = cls._facet_rule()
         for facets, (nrm_x, nrm_y, nrm_z) in cls._boundary_facet_groups(
                 conn, xyz, nx, ny, nz):
@@ -309,8 +293,6 @@ class _HexElement(_ElementBase3D):
 
     @staticmethod
     def _boundary_facet_groups(conn, xyz, nx, ny, nz):
-        # Structured grid: the six faces are quad lists from the grid indices;
-        # conn/xyz are unused (the hex ordering is fixed by RegularGridTopology).
         xm, xp, ym, yp, zm, zp = _boundary_quads(nx, ny, nz)
         return [(xm, (-1.0, 0.0, 0.0)),
                 (xp, (+1.0, 0.0, 0.0)),
