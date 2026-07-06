@@ -128,6 +128,7 @@ def build_solid_scene(rootNode, mms, element, force_field, linear_solver,
 
     dofs = Solid.addObject("MechanicalObject", name="dofs", template="Vec3d",
                            position=nodes_3d.tolist(),
+                           rest_position=nodes_3d.tolist(),
                            showObject=with_visual, showObjectScale=0.005 * L)
 
     topology = element.add_topology(Solid)
@@ -169,13 +170,12 @@ def solve_solid(elem, mms, L, E, nu, nx, ny, nz, force_field, linear_solver):
     Sofa.Simulation.initRoot(root)
     nodes_3d = dofs.rest_position.array().copy()
     conn     = elem.read_connectivity(topology)
-    pos0     = dofs.position.array().copy()
     Sofa.Simulation.animate(root, root.dt.value)
     pos1     = dofs.position.array().copy()
     Sofa.Simulation.unload(root)
-    ux = pos1[:, 0] - pos0[:, 0]
-    uy = pos1[:, 1] - pos0[:, 1]
-    uz = pos1[:, 2] - pos0[:, 2]
+    ux = pos1[:, 0] - nodes_3d[:, 0]
+    uy = pos1[:, 1] - nodes_3d[:, 1]
+    uz = pos1[:, 2] - nodes_3d[:, 2]
     return SolidSolution3D(nodes=nodes_3d, conn=conn, ux=ux, uy=uy, uz=uz)
 
 

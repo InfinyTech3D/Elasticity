@@ -86,25 +86,18 @@ class SinusNeumann(MMSCase3D):
     def apply_bcs(self, Solid, nodes_3d, L):
         eps = 1e-10
         xyz = nodes_3d[:, :3]
+        dofs = Solid.dofs
 
-        def find_corner(pred):
-            for k, (xk, yk, zk) in enumerate(xyz):
-                if pred(xk, yk, zk):
-                    return k
-            raise RuntimeError("sinusoidal: BC corner not found")
+        face = [i for i, (x, y, z) in enumerate(xyz) if x < eps]
 
-        i_origin = find_corner(lambda x, y, z: x < eps     and y < eps     and z < eps)
-        i_xL     = find_corner(lambda x, y, z: x > L - eps and y < eps     and z < eps)
-        i_yL     = find_corner(lambda x, y, z: x < eps     and y > L - eps and z < eps)
+        with dofs.position.writeable() as pos:
+            for i in face:
+                x, y, z = xyz[i]
+                ux, uy, uz = self.u_ex(x, y, z, L)
+                pos[i] = [x + ux, y + uy, z + uz]
 
         Solid.addObject("FixedProjectiveConstraint",
-                        name="fix_origin", indices=i_origin)
-        Solid.addObject("PartialFixedProjectiveConstraint",
-                        name="fix_x_axis", template="Vec3d",
-                        indices=i_xL, fixedDirections="0 1 1")
-        Solid.addObject("PartialFixedProjectiveConstraint",
-                        name="fix_y_axis", template="Vec3d",
-                        indices=i_yL, fixedDirections="0 0 1")
+                        name="fix_face", indices=face)
 
 
 mms         = SinusNeumann()

@@ -7,7 +7,7 @@
         "parameters": {
             "template": "GraphScattered",
             "tolerance": 1e-14,
-            "iterations": 4000,
+            "iterations": 200,
             "preconditioner": "@precond"
         },
         "preconditioner": "SSORPreconditioner"
@@ -20,10 +20,8 @@
         "nu_values": [0.3],
         "nx_values": {
             "sinusoidal": [
-                  22, 24, 26, 28, 30
-                , 32, 34, 36, 38, 40
-                , 42, 44, 46, 48, 50
-                , 60, 70, 80, 90, 100
+                  8, 12, 16, 20, 24, 28,
+                32, 36, 40, 44, 48, 52, 56, 60
             ]
         }
     }
