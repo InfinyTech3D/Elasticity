@@ -20,6 +20,7 @@ class MMSCase3D(MMSCase):
     # Body-force quadrature rule — must be set by each concrete case.
     # No framework fallback; assembly raises if unset.
     source_quadrature_hex = None   # element rule for Q1 hexes (e.g. hex_q1_rule(2))
+    source_quadrature_tet = None   # element rule for P1 tets  (e.g. tet_p1_rule(4))
 
     @abstractmethod
     def u_ex(self, x, y, z, L):

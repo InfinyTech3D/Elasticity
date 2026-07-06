@@ -11,8 +11,8 @@ import SofaRuntime
 
 # Make the parent MMS/ directory importable so we can pull in fem.py.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fem import hex_q1_rule              # re-exported for case files
-from elements import element_hex          # re-exported for case files
+from fem import hex_q1_rule, tet_p1_rule  # re-exported for case files
+from elements import element_hex, element_tet  # re-exported for case files
 from solid_solution import SolidSolution3D
 from output import write_solution_table
 from scene import NodalForceAssembler

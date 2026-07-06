@@ -19,7 +19,8 @@ import numpy as np
 
 from manufactured_solution import MMSCase3D, lame
 from solid import (case_scene, run_reference_scene,
-                   element_hex, hex_q1_rule)
+                   element_hex, hex_q1_rule,
+                   element_tet, tet_p1_rule)
 
 
 SINUS_AMPLITUDE = 1e-1
@@ -32,6 +33,7 @@ class SinusNeumann(MMSCase3D):
                   r"\sin(\pi z/L)\sin(\pi x/L))$")
 
     source_quadrature_hex = staticmethod(hex_q1_rule(2))
+    source_quadrature_tet = staticmethod(tet_p1_rule(4))
 
     def u_ex(self, x, y, z, L):
         k = np.pi / L
