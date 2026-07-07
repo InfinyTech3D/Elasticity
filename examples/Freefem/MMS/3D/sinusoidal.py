@@ -19,7 +19,8 @@ import numpy as np
 
 from manufactured_solution import MMSCase3D, lame
 from solid import (case_scene, run_reference_scene,
-                   element_hex, hex_q1_rule)
+                   element_hex, hex_q1_rule,
+                   element_tet, tet_p1_rule)
 
 
 SINUS_AMPLITUDE = 1e-1
@@ -32,6 +33,7 @@ class SinusNeumann(MMSCase3D):
                   r"\sin(\pi z/L)\sin(\pi x/L))$")
 
     source_quadrature_hex = staticmethod(hex_q1_rule(2))
+    source_quadrature_tet = staticmethod(tet_p1_rule(4))
 
     def u_ex(self, x, y, z, L):
         k = np.pi / L
@@ -84,30 +86,23 @@ class SinusNeumann(MMSCase3D):
     def apply_bcs(self, Solid, nodes_3d, L):
         eps = 1e-10
         xyz = nodes_3d[:, :3]
+        dofs = Solid.dofs
 
-        def find_corner(pred):
-            for k, (xk, yk, zk) in enumerate(xyz):
-                if pred(xk, yk, zk):
-                    return k
-            raise RuntimeError("sinusoidal: BC corner not found")
+        face = [i for i, (x, y, z) in enumerate(xyz) if x < eps]
 
-        i_origin = find_corner(lambda x, y, z: x < eps     and y < eps     and z < eps)
-        i_xL     = find_corner(lambda x, y, z: x > L - eps and y < eps     and z < eps)
-        i_yL     = find_corner(lambda x, y, z: x < eps     and y > L - eps and z < eps)
+        with dofs.position.writeable() as pos:
+            for i in face:
+                x, y, z = xyz[i]
+                ux, uy, uz = self.u_ex(x, y, z, L)
+                pos[i] = [x + ux, y + uy, z + uz]
 
         Solid.addObject("FixedProjectiveConstraint",
-                        name="fix_origin", indices=i_origin)
-        Solid.addObject("PartialFixedProjectiveConstraint",
-                        name="fix_x_axis", template="Vec3d",
-                        indices=i_xL, fixedDirections="0 1 1")
-        Solid.addObject("PartialFixedProjectiveConstraint",
-                        name="fix_y_axis", template="Vec3d",
-                        indices=i_yL, fixedDirections="0 0 1")
+                        name="fix_face", indices=face)
 
 
 mms         = SinusNeumann()
-createScene = case_scene(mms, element_hex)
+createScene = case_scene(mms, element_tet)
 
 
 if __name__ == "__main__":
-    run_reference_scene(element_hex, mms)
+    run_reference_scene(element_tet, mms)
