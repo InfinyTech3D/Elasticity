@@ -11,8 +11,8 @@ import SofaRuntime
 
 # Make the parent MMS/ directory importable so we can pull in fem.py.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from fem import hex_q1_rule              # re-exported for case files
-from elements import element_hex          # re-exported for case files
+from fem import hex_q1_rule, tet_p1_rule  # re-exported for case files
+from elements import element_hex, element_tet  # re-exported for case files
 from solid_solution import SolidSolution3D
 from output import write_solution_table
 from scene import NodalForceAssembler
@@ -73,6 +73,8 @@ def build_solid_scene(rootNode, mms, element, force_field, linear_solver,
         "Sofa.Component.Engine.Select",
         "Sofa.Component.LinearSolver.Direct",
         "Sofa.Component.LinearSolver.Iterative",
+        "Sofa.Component.LinearSolver.Preconditioner",
+        "Sofa.Component.LinearSystem",
         "Sofa.Component.MechanicalLoad",
         "Sofa.Component.ODESolver.Backward",
         "Sofa.Component.StateContainer",
@@ -99,20 +101,42 @@ def build_solid_scene(rootNode, mms, element, force_field, linear_solver,
     Solid = rootNode.addChild("Solid")
     Solid.addObject("StaticSolver", name="staticSolver", printLog=False)
     Solid.addObject("NewtonRaphsonSolver", name="newtonSolver",
-                    maxNbIterationsNewton=1,
+                    maxNbIterationsNewton=10,
                     absoluteResidualStoppingThreshold=1e-10,
-                    printLog=False)
-    Solid.addObject(linear_solver["type"], name="linearSolver",
-                    **linear_solver["parameters"])
+                    relativeSuccessiveStoppingThreshold=1e-12,
+                    relativeInitialStoppingThreshold=1e-12,
+                    printLog=True)
+
+    if linear_solver["preconditioner"]:
+        preconditioner = linear_solver["preconditioner"]
+        Solid.addObject("PreconditionedMatrixFreeSystem"
+            , name="solverSystem"
+            , template="GraphScattered"
+            , preconditionerSystem="@precondSystem")
+        Solid.addObject(linear_solver["type"]
+            , name="linearSolver"
+            , **linear_solver["parameters"]
+            , printLog=True)
+
+        Solid.addObject("MatrixLinearSystem"
+            , name="precondSystem"
+            , template="CompressedRowSparseMatrixd")
+        Solid.addObject(preconditioner, name="precond", printLog=True)
+
+    else:
+        Solid.addObject(linear_solver["type"], name="linearSolver", **linear_solver["parameters"])
 
     dofs = Solid.addObject("MechanicalObject", name="dofs", template="Vec3d",
                            position=nodes_3d.tolist(),
+                           rest_position=nodes_3d.tolist(),
                            showObject=with_visual, showObjectScale=0.005 * L)
 
     topology = element.add_topology(Solid)
 
     Solid.addObject(force_field, name="FEM", template="Vec3d",
-                    youngModulus=E, poissonRatio=nu, topology="@topology")
+                    youngModulus=E, poissonRatio=nu, topology="@topology",
+                    computeForceStrategy="parallel", computeForceDerivStrategy="parallel")
+
 
     mms.apply_bcs(Solid, nodes_3d, L)
 
@@ -143,16 +167,15 @@ def solve_solid(elem, mms, L, E, nu, nx, ny, nz, force_field, linear_solver):
         nx=nx, ny=ny, nz=nz, with_visual=False,
         force_field=force_field, linear_solver=linear_solver
     )
-    Sofa.Simulation.init(root)
+    Sofa.Simulation.initRoot(root)
     nodes_3d = dofs.rest_position.array().copy()
     conn     = elem.read_connectivity(topology)
-    pos0     = dofs.position.array().copy()
     Sofa.Simulation.animate(root, root.dt.value)
     pos1     = dofs.position.array().copy()
     Sofa.Simulation.unload(root)
-    ux = pos1[:, 0] - pos0[:, 0]
-    uy = pos1[:, 1] - pos0[:, 1]
-    uz = pos1[:, 2] - pos0[:, 2]
+    ux = pos1[:, 0] - nodes_3d[:, 0]
+    uy = pos1[:, 1] - nodes_3d[:, 1]
+    uz = pos1[:, 2] - nodes_3d[:, 2]
     return SolidSolution3D(nodes=nodes_3d, conn=conn, ux=ux, uy=uy, uz=uz)
 
 

@@ -3,19 +3,26 @@
     "youngModulus": 1e6,
     "forceField": "LinearSmallStrainFEMForceField",
     "linearSolver": {
-        "type": "SparseLDLSolver",
+        "type": "PCGLinearSolver",
         "parameters": {
-            "template": "CompressedRowSparseMatrixd"
-        }
+            "template": "GraphScattered",
+            "tolerance": 1e-14,
+            "iterations": 200,
+            "preconditioner": "@precond"
+        },
+        "preconditioner": "SSORPreconditioner"
     },
     "reference": {
-        "nx": 6,
+        "nx": 20,
         "nu": 0.3
     },
     "convergence": {
-        "nu_values": [0.3, 0.49],
+        "nu_values": [0.3],
         "nx_values": {
-            "sinusoidal": [10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30]
+            "sinusoidal": [
+                  8, 12, 16, 20, 24, 28,
+                32, 36, 40, 44, 48, 52, 56, 60
+            ]
         }
     }
 }
