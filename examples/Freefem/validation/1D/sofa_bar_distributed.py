@@ -20,7 +20,7 @@ RESULTS_DIR = "results"
 
 
 class DisplacementExporter(Sofa.Core.Controller):
-    
+
     def __init__(self, dofs_node, output_file, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dofs_node   = dofs_node
@@ -43,10 +43,10 @@ class DisplacementExporter(Sofa.Core.Controller):
 
 
 def _consistent_nodal_forces(q, h, nx):
-    """Consistent (Galerkin) nodal forces for a constant distributed load q."""
+
     forces = [q * h] * nx
-    forces[0]     = q * h / 2.0   
-    forces[-1]    = q * h / 2.0   
+    forces[0]     = q * h / 2.0
+    forces[-1]    = q * h / 2.0
     return [[f] for f in forces]
 
 
@@ -58,6 +58,7 @@ def create_scene_args(rootNode, length, q, young_modulus, poisson_ratio, nx):
         "Sofa.Component.MechanicalLoad",
         "Sofa.Component.ODESolver.Backward",
         "Sofa.Component.StateContainer",
+        "Sofa.Component.Topology.Container.Grid",
         "Sofa.Component.Topology.Container.Dynamic",
         "Sofa.Component.Visual",
         "Sofa.GL.Component.Rendering3D",
@@ -68,6 +69,13 @@ def create_scene_args(rootNode, length, q, young_modulus, poisson_ratio, nx):
     rootNode.addObject('VisualStyle', displayFlags=["showBehaviorModels", "showForceFields"])
 
     h = length / (nx - 1)
+
+    Grid = rootNode.addChild('Grid')
+    Grid.addObject('RegularGridTopology'
+                    , name="grid"
+                    , nx=nx, ny=1, nz=1
+                    , min=[0., 0., 0.]
+                    , max=[length, 0., 0.])
 
     with rootNode.addChild('Bar') as Bar:
         Bar.addObject('NewtonRaphsonSolver'
@@ -92,27 +100,23 @@ def create_scene_args(rootNode, length, q, young_modulus, poisson_ratio, nx):
                     , newtonSolver="@newtonSolver"
                     , linearSolver="@linearSolver")
 
-        positions = [[i * h] for i in range(nx)]
-        edges     = [[i, i + 1] for i in range(nx - 1)]
+        Bar.addObject('EdgeSetTopologyContainer'
+                    , name="topology"
+                    , edges="@../Grid/grid.edges"
+                    , position="@../Grid/grid.position")
 
         dofs = Bar.addObject('MechanicalObject'
                             , name="dofs"
                             , template="Vec1d"
-                            , position=positions
                             , showObject=True
                             , showObjectScale=0.02)
 
-        with Bar.addChild('edges') as Edges:
-            Edges.addObject('EdgeSetTopologyContainer'
-                            , name="topology"
-                            , position="@../dofs.position"
-                            , edges=edges)
-            Edges.addObject('LinearSmallStrainFEMForceField'
-                            , name="FEM"
-                            , template="Vec1d"
-                            , youngModulus=young_modulus
-                            , poissonRatio=poisson_ratio
-                            , topology="@topology")
+        Bar.addObject('LinearSmallStrainFEMForceField'
+                    , name="FEM"
+                    , template="Vec1d"
+                    , youngModulus=young_modulus
+                    , poissonRatio=poisson_ratio
+                    , topology="@topology")
 
         Bar.addObject('FixedProjectiveConstraint', indices="0")
 
