@@ -1,0 +1,49 @@
+IMPORT "io.edp"
+load "gmsh"
+
+DEFAULT (q, 1000.0)
+DEFAULT (youngModulus, 1000.0)
+DEFAULT (poissonRatio, 0.3)
+DEFAULT (meshFile, "beam2d_tri.msh")
+
+
+real Q          = $q;
+real E  = $youngModulus;
+real nu  = $poissonRatio;
+
+
+real mu     = E / (2.*(1.+nu));
+real lambda = E*nu / (1. - nu^2);   // plane stress
+
+// --- Mesh ---
+mesh Th = gmshload("$meshFile");
+
+
+// --- FE space ---
+fespace Vh(Th, P1);
+Vh ux, uy, vx, vy;
+
+
+solve Elasticity([ux, uy], [vx, vy]) =
+    int2d(Th)(
+          lambda*(dx(ux)+dy(uy))*(dx(vx)+dy(vy))
+        + 2.*mu*( dx(ux)*dx(vx) + dy(uy)*dy(vy) )
+        + mu*( dy(ux)+dx(uy) )*( dy(vx)+dx(vy) )
+    )
+    - int2d(Th)( -Q*vy )
+    + on(1, ux=0, uy=0);
+
+Elasticity;
+
+exportArray(ux[]);
+exportArray(uy[]);
+
+
+real[int] xcoords(Th.nv), ycoords(Th.nv);
+for (int i = 0; i < Th.nv; i++) {
+    xcoords[i] = Th(i).x;
+    ycoords[i] = Th(i).y;
+}
+
+exportArray(xcoords);
+exportArray(ycoords);
