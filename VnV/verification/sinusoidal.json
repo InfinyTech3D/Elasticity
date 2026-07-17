@@ -1,0 +1,12 @@
+{
+  "geometry":    { "type": "Bar1D", "length": 2.0 },
+  "material":    { "youngModulus": 1e6 },
+  "forceField":  "LinearSmallStrainFEMForceField",
+  "solvers": {
+    "integration":  { "type": "StaticSolver" },
+    "newton":       { "type": "NewtonRaphsonSolver", "maxNbIterationsNewton": 10, "absoluteResidualStoppingThreshold": 1e-10 },
+    "linearSolver": { "type": "SparseLDLSolver", "template": "CompressedRowSparseMatrixd" }
+  },
+  "mesh":        { "sizes": [2, 4, 6, 8, 10, 12, 16, 32] },
+  "function":    "sinusoidal"
+}
