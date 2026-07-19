@@ -1,5 +1,6 @@
 {
   "geometry":    { "type": "Bar1D", "length": 2.0 },
+  "element":     "edge",
   "material":    { "youngModulus": 1e6 },
   "forceField":  "LinearSmallStrainFEMForceField",
   "solvers": {
@@ -7,6 +8,6 @@
     "newton":       { "type": "NewtonRaphsonSolver", "maxNbIterationsNewton": 10, "absoluteResidualStoppingThreshold": 1e-10 },
     "linearSolver": { "type": "SparseLDLSolver", "template": "CompressedRowSparseMatrixd" }
   },
-  "mesh":        { "sizes": [2, 4, 6, 8, 10, 12, 16, 32] },
+  "mesh":        { "sizes": [[32], [48], [64], [80], [96], [112], [124]] },
   "function":    "sinusoidal"
 }

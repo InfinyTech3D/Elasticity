@@ -1,0 +1,13 @@
+{
+  "geometry":    { "type": "Beam2D", "length": 1.0, "width": 1.0 },
+  "element":     "tri",
+  "material":    { "youngModulus": 1e6, "poissonRatio": 0.3 },
+  "forceField":  "LinearSmallStrainFEMForceField",
+  "solvers": {
+    "integration":  { "type": "StaticSolver" },
+    "newton":       { "type": "NewtonRaphsonSolver", "maxNbIterationsNewton": 10, "absoluteResidualStoppingThreshold": 1e-10 },
+    "linearSolver": { "type": "SparseLDLSolver", "template": "CompressedRowSparseMatrixd" }
+  },
+  "mesh":        { "sizes": [[8, 8], [16, 16], [24, 24], [32, 32], [48, 48], [64, 64]] },
+  "function":    "trigonometric"
+}

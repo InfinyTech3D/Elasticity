@@ -1,48 +1,69 @@
-"""SOFA prefab: a dimension/element-agnostic elastic beam built from a geometry."""
+"""SOFA prefab: a dimension/element-agnostic elastic beam."""
 
 import Sofa
 import Sofa.Core
 
-from ..conventions import VEC_BY_DIM, CONTAINER
+from ..conventions import VEC_BY_DIM, CONTAINER, MAPPING
+
+
+def validate_parameters(config):
+    """Required ElasticBeam parameters; poissonRatio is required only for dim > 1."""
+    required = ['extents', 'resolution', 'dim', 'element', 'youngModulus', 'forceFieldName']
+    if config.get('dim', 1) > 1:
+        required.append('poissonRatio')
+    missing = [p for p in required if p not in config]
+    if missing:
+        raise ValueError(f"ElasticBeam: missing required parameters {missing}")
 
 
 class ElasticBeam(Sofa.Prefab):
-    """SOFA realization of a geometry: topology + dofs + FEM force field."""
+    """SOFA elastic beam: RegularGridTopology + dofs + FEM force field."""
 
-    def __init__(self, *args, geometry, material, force_field, resolution, **kwargs):
-        self.geo = geometry
-        self.material = material
-        self.force_field = force_field
-        self.resolution = resolution
+    prefabParameters = [
+        {'name': 'extents',        'type': 'Vec3d',  'help': 'box max corner [Lx, Ly, Lz]'},
+        {'name': 'resolution',     'type': 'Vec3d',  'help': 'nodes per axis [nx, ny, nz]'},
+        {'name': 'dim',            'type': 'int',    'help': 'spatial dimension'},
+        {'name': 'element',        'type': 'string', 'help': 'element kind (edge/tri/quad/tet/hexa)'},
+        {'name': 'youngModulus',   'type': 'double', 'help': "Young's modulus"},
+        {'name': 'poissonRatio',   'type': 'double', 'help': "Poisson's ratio (used when dim > 1)", 'default': 0.0},
+        {'name': 'forceFieldName', 'type': 'string', 'help': 'FEM force field component name'},
+    ]
+
+    def __init__(self, *args, **kwargs):
+        validate_parameters(kwargs)
         Sofa.Prefab.__init__(self, *args, **kwargs)
 
     def init(self):
-        g = self.geo
-        VecType = VEC_BY_DIM[g.dim]
-        container, connectivity = CONTAINER[g.element]
-        n, L = self.resolution, g.length
-
-        # Beam spans [0, L] per active dimension; inactive axes collapse to one layer.
-        if g.dim == 1:
-            grid = dict(nx=n, ny=1, nz=1, min=[0.0, 0.0, 0.0], max=[L, 0.0, 0.0])
-        elif g.dim == 2:
-            grid = dict(nx=n, ny=n, nz=1, min=[0.0, 0.0, 0.0], max=[L, L, 0.0])
-        else:
-            grid = dict(nx=n, ny=n, nz=n, min=[0.0, 0.0, 0.0], max=[L, L, L])
+        dim = self.dim.value
+        VecType = VEC_BY_DIM[dim]
+        element = self.element.value
+        container, connectivity = CONTAINER[element]
+        mapping = MAPPING[element]
+        res = self.resolution.value
 
         # Grid Topology Node
         with self.addChild('Grid') as grid_node:
-            grid_node.addObject('RegularGridTopology', name='grid', **grid)
+            grid_node.addObject('RegularGridTopology', name='grid',
+                                nx=int(res[0]), ny=int(res[1]), nz=int(res[2]),
+                                min=[0.0, 0.0, 0.0], max=list(self.extents.value))
 
         # Node containing Beam components
         with self.addChild('Beam') as beam:
             self.beam = beam
 
             # Topology
-            beam.addObject(container, name='topology', position='@../Grid/grid.position',
-                           **{connectivity: f'@../Grid/grid.{connectivity}'})
+            if mapping is None:
+                beam.addObject(container, name='topology', position='@../Grid/grid.position',
+                               **{connectivity: f'@../Grid/grid.{connectivity}'})
+            else:
+                beam.addObject(container, name='topology', position='@../Grid/grid.position')
+                beam.addObject(mapping, input='@../Grid/grid', output='@topology')
+                beam.addObject(container.replace('Container', 'Modifier'))
             # DOFs
             beam.addObject('MechanicalObject', name='dofs', template=VecType)
             # FEM
-            beam.addObject(self.force_field, name='FEM', template=VecType,
-                           topology='@topology', **self.material)
+            paramsFEM = dict(youngModulus=self.youngModulus.value)
+            if dim > 1:
+                paramsFEM['poissonRatio'] = self.poissonRatio.value
+            beam.addObject(self.forceFieldName.value, name='FEM', template=VecType,
+                           topology='@topology', **paramsFEM)
