@@ -3,9 +3,9 @@
 import numpy as np
 
 from ..sofa.scene import Scene
-from ..sofa.conventions import CONTAINER, VEC_BY_DIM
-from ..sofa.controllers import NodalForceAssembler, RegionClamp, region_facets
-from .fem import ELEMENT_RULES, FACET_RULES, source_integration, source_integration_boundary
+from ..sofa.conventions import ELEMENT_CPP, VEC_BY_DIM
+from ..sofa.controllers import NodalForceAssembler, NodalFieldFiller, RegionClamp, region_facets
+from .fem import FACET_RULES, source_integration_boundary
 
 
 class MMSScene(Scene):
@@ -18,8 +18,6 @@ class MMSScene(Scene):
     def apply_bcs(self, beam):
         node = beam.beam
         g, mms, material, element = self.geometry, self.mms, self.material, self.element
-        connectivity = CONTAINER[element][1]
-        element_rule = ELEMENT_RULES[element]()
         facet_rule = FACET_RULES[element]()
 
         # Prescribed displacement u_ex per region+direction mask: one partial clamp per mask, filled post-init.
@@ -35,18 +33,20 @@ class MMSScene(Scene):
         node.addObject(RegionClamp(geometry=g, dofs=node.dofs, groups=groups,
                                    displacement=mms.u, name='clampCtrl'))
 
-        # Body force from the source + boundary traction sigma.n: assembled post-init.
+        # Body force from the source: integrated by SOFA's FEMBodyForce component (SOFA quadrature).
+        bf = node.addObject('FEMBodyForce', name='bodyForce',
+                            template=f"{VEC_BY_DIM[g.dim]},{ELEMENT_CPP[element]}")
+        node.addObject(NodalFieldFiller(dofs=node.dofs, field=bf,
+                                        sample=lambda p: mms.source(np.asarray(p), material),
+                                        name='bodyForceCtrl'))
+
+        # Boundary traction sigma.n: still assembled in Python, filled post-init.
         n = int(np.prod(self.resolution))
         load = node.addObject('ConstantForceField', name='load', template=VEC_BY_DIM[g.dim],
                               indices=list(range(n)), forces=[[0.0] * g.dim] * n)
 
         def compute(nodes, topology):
-            conn = getattr(topology, connectivity).array()
-
-            def body_force(*coords):
-                return mms.source(np.asarray(coords), material)
-
-            F = source_integration(body_force, nodes, conn, element_rule)
+            F = np.zeros((len(nodes), g.dim))
             for r in mms.traction_on:
                 normal = np.asarray(g.normals[r])
 

@@ -12,6 +12,15 @@ CONTAINER = {
     "hexa": ("HexahedronSetTopologyContainer",  "hexahedra"),
 }
 
+# Element kind -> SOFA geometry element name, for compound component templates ("Vec3d,Hexahedron").
+ELEMENT_CPP = {
+    "edge": "Edge",
+    "tri":  "Triangle",
+    "quad": "Quad",
+    "tet":  "Tetrahedron",
+    "hexa": "Hexahedron",
+}
+
 # Element kind -> topology Data holding its boundary facets (edge: a facet is a vertex).
 FACET_FIELD = {
     "edge": None,

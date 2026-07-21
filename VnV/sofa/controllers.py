@@ -1,5 +1,7 @@
 """Post-init SOFA controllers for the VnV suite."""
 
+import numpy as np
+
 import Sofa
 import Sofa.Core
 
@@ -40,6 +42,22 @@ class NodalForceAssembler(Sofa.Core.Controller):
         F = self.compute_forces(nodes, self.topology)
         with self.force_field.forces.writeableArray() as forces:
             forces[:] = F
+
+
+class NodalFieldFiller(Sofa.Core.Controller):
+    """Fills a component's nodal Data field after init by sampling a function at the rest positions."""
+
+    def __init__(self, dofs, field, sample, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dofs = dofs
+        self.field = field
+        self.sample = sample
+
+    def onSimulationInitDoneEvent(self, event):
+        rest = self.dofs.rest_position.array()
+        values = np.array([self.sample(p) for p in rest])
+        with self.field.nodalBodyForce.writeableArray() as arr:
+            arr[:] = values
 
 
 class RegionClamp(Sofa.Core.Controller):
