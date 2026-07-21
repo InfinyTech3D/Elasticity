@@ -1,0 +1,8 @@
+{
+  "length": 1.0,
+  "radius": 0.1,
+  "youngModulus": 210000.0,
+  "poissonRatio": 0.3,
+  "q": 31830.988618,
+  "exclusionFactor": 2.0
+}
