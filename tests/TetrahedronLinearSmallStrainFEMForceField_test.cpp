@@ -1,4 +1,4 @@
-#include <sofa/component/solidmechanics/fem/elastic/ElementLinearSmallStrainFEMForceField.h>
+#include <sofa/component/solidmechanics/fem/elastic/LinearSmallStrainFEMForceField.h>
 #include <sofa/component/solidmechanics/fem/elastic/TetrahedronFEMForceField.h>
 #include <sofa/component/solidmechanics/fem/elastic/impl/LameParameters.h>
 #include <sofa/component/solidmechanics/fem/elastic/impl/OrthotropicElasticityTensor.h>
@@ -13,7 +13,7 @@ namespace elasticity
 
 template<class DataTypes>
 using TetrahedronLinearSmallStrainFEMForceField =
-    sofa::component::solidmechanics::fem::elastic::ElementLinearSmallStrainFEMForceField<DataTypes, sofa::geometry::Tetrahedron>;
+    sofa::component::solidmechanics::fem::elastic::LinearSmallStrainFEMForceField<DataTypes, sofa::geometry::Tetrahedron>;
 
 /**
  * This test is based on the generic test valid on every force field.

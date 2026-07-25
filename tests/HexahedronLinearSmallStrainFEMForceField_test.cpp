@@ -1,4 +1,4 @@
-#include <sofa/component/solidmechanics/fem/elastic/ElementLinearSmallStrainFEMForceField.h>
+#include <sofa/component/solidmechanics/fem/elastic/LinearSmallStrainFEMForceField.h>
 #include <sofa/fem/FiniteElement[Hexahedron].h>
 #include <sofa/component/solidmechanics/testing/ForceFieldTestCreation.h>
 #include <sofa/component/topology/container/constant/MeshTopology.h>
@@ -16,7 +16,7 @@ TEST(FiniteElement_Hexa, quadraturePoints)
 TEST(HexahedronLinearSmallStrainFEMForceField, jacobian)
 {
     using Force =
-        sofa::component::solidmechanics::fem::elastic::ElementLinearSmallStrainFEMForceField<sofa::defaulttype::Vec3Types, sofa::geometry::Hexahedron>;
+        sofa::component::solidmechanics::fem::elastic::LinearSmallStrainFEMForceField<sofa::defaulttype::Vec3Types, sofa::geometry::Hexahedron>;
     using FE = sofa::fem::FiniteElement<sofa::geometry::Hexahedron, sofa::defaulttype::Vec3Types>;
 
     constexpr std::array<sofa::type::Vec3, 8> hexaNodesCoordinates{{
