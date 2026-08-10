@@ -56,7 +56,7 @@ class NodalFieldFiller(Sofa.Core.Controller):
     def onSimulationInitDoneEvent(self, event):
         rest = self.dofs.rest_position.array()
         values = np.array([self.sample(p) for p in rest])
-        with self.field.nodalBodyForce.writeableArray() as arr:
+        with self.field.nodalSourceDensity.writeableArray() as arr:
             arr[:] = values
 
 

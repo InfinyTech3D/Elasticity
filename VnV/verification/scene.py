@@ -33,8 +33,8 @@ class MMSScene(Scene):
         node.addObject(RegionClamp(geometry=g, dofs=node.dofs, groups=groups,
                                    displacement=mms.u, name='clampCtrl'))
 
-        # Body force from the source: integrated by SOFA's FEMBodyForce component (SOFA quadrature).
-        bf = node.addObject('FEMBodyForce', name='bodyForce',
+        # Body force from the source: integrated by SOFA's FEMSourceTerm component (SOFA quadrature).
+        bf = node.addObject('FEMSourceTerm', name='bodyForce',
                             template=f"{VEC_BY_DIM[g.dim]},{ELEMENT_CPP[element]}")
         node.addObject(NodalFieldFiller(dofs=node.dofs, field=bf,
                                         sample=lambda p: mms.source(np.asarray(p), material),
