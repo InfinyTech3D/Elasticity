@@ -5,20 +5,17 @@ load "gmsh"
 DEFAULT (meshfile, "beam3d_circle_tet.msh")
 DEFAULT (E, 210000.0)
 DEFAULT (nu, 0.3)
-DEFAULT (F, 1000.0)
+DEFAULT (q, 31830.988618)
 DEFAULT (radius, 0.1)
 DEFAULT (length, 1.0)
 DEFAULT (exclusionFactor, 2.0)
 
 real E      = $E;
 real nu     = $nu;
-real F      = $F;
+real q      = $q;         // axial traction on the loaded cap, must match the SOFA scene
 real radius = $radius;
 real length = $length;
 real exclusionFactor = $exclusionFactor;
-
-real A = pi*radius^2;
-real q = F/A;             
 
 real lambda = E*nu/((1.+nu)*(1.-2.*nu));
 real mu     = E/(2.*(1.+nu));
@@ -64,9 +61,9 @@ int nCompared = 0;
 for (int i = 0; i < Th.nv; i++) {
     real xi = Th(i).x, yi = Th(i).y, zi = Th(i).z;
     if (xi < exclusionx) continue;
-    real uxAn = (F/(E*A))*xi;
-    real uyAn = -nu*(F/(E*A))*yi;
-    real uzAn = -nu*(F/(E*A))*zi;
+    real uxAn = (q/E)*xi;
+    real uyAn = -nu*(q/E)*yi;
+    real uzAn = -nu*(q/E)*zi;
     sumSqUx += (ux[](i) - uxAn)^2;
     sumSqUy += (uy[](i) - uyAn)^2;
     sumSqUz += (uz[](i) - uzAn)^2;
