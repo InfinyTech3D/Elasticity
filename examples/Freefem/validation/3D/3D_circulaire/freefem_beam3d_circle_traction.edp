@@ -1,0 +1,72 @@
+IMPORT "io.edp"
+load "msh3"
+load "gmsh"
+ 
+DEFAULT (meshfile, "beam3d_circle_tet.msh")
+DEFAULT (E, 210000.0)
+DEFAULT (nu, 0.3)
+DEFAULT (q, 31830.988618)
+DEFAULT (radius, 0.1)
+DEFAULT (length, 1.0)
+DEFAULT (exclusionFactor, 2.0)
+
+real E      = $E;
+real nu     = $nu;
+real q      = $q;         // axial traction on the loaded cap, must match the SOFA scene
+real radius = $radius;
+real length = $length;
+real exclusionFactor = $exclusionFactor;
+
+real lambda = E*nu/((1.+nu)*(1.-2.*nu));
+real mu     = E/(2.*(1.+nu));
+
+
+mesh3 Th = gmshload3("$meshfile");
+
+
+fespace Vh(Th, P1);
+Vh ux, uy, uz, vx, vy, vz;
+
+solve Elasticity([ux, uy, uz], [vx, vy, vz]) =
+    int3d(Th)(
+        lambda*(dx(ux)+dy(uy)+dz(uz))*(dx(vx)+dy(vy)+dz(vz))
+      + mu*( 2.*dx(ux)*dx(vx) + 2.*dy(uy)*dy(vy) + 2.*dz(uz)*dz(vz)
+           + (dy(ux)+dx(uy))*(dy(vx)+dx(vy))
+           + (dz(ux)+dx(uz))*(dz(vx)+dx(vz))
+           + (dz(uy)+dy(uz))*(dz(vy)+dy(vz)) )
+    )
+  - int2d(Th, 2)( q*vx )
+  + on(1, ux=0, uy=0, uz=0);
+
+exportArray(ux[]);
+exportArray(uy[]);
+exportArray(uz[]);
+
+real[int] xcoords(Th.nv);
+real[int] ycoords(Th.nv);
+real[int] zcoords(Th.nv);
+for (int i = 0; i < Th.nv; i++) {
+    xcoords[i] = Th(i).x;
+    ycoords[i] = Th(i).y;
+    zcoords[i] = Th(i).z;
+}
+exportArray(xcoords);
+exportArray(ycoords);
+exportArray(zcoords);
+ 
+real exclusionx = exclusionFactor*radius;
+
+real sumSqUx = 0., sumSqUy = 0., sumSqUz = 0.;
+int nCompared = 0;
+for (int i = 0; i < Th.nv; i++) {
+    real xi = Th(i).x, yi = Th(i).y, zi = Th(i).z;
+    if (xi < exclusionx) continue;
+    real uxAn = (q/E)*xi;
+    real uyAn = -nu*(q/E)*yi;
+    real uzAn = -nu*(q/E)*zi;
+    sumSqUx += (ux[](i) - uxAn)^2;
+    sumSqUy += (uy[](i) - uyAn)^2;
+    sumSqUz += (uz[](i) - uzAn)^2;
+    nCompared++;
+}
+ 
