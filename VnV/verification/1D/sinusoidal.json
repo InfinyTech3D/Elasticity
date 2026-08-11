@@ -1,7 +1,8 @@
 {
   "geometry":    { "type": "Bar1D", "length": 2.0 },
   "element":     "edge",
-  "material":    { "youngModulus": 1e6 },
+  "quadratureDegree": 3,
+  "material":    { "youngModulus": 1e6, "poissonRatio": 0.3 },
   "forceField":  "LinearSmallStrainFEMForceField",
   "solvers": {
     "integration":  { "type": "StaticSolver" },

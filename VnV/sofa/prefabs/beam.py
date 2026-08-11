@@ -3,14 +3,12 @@
 import Sofa
 import Sofa.Core
 
-from ..conventions import VEC_BY_DIM, CONTAINER, MAPPING
+from ..conventions import VEC_BY_DIM, CONTAINER, MAPPING, ELEMENT_CPP
 
 
 def validate_parameters(config):
-    """Required ElasticBeam parameters; poissonRatio is required only for dim > 1."""
-    required = ['extents', 'resolution', 'dim', 'element', 'youngModulus', 'forceFieldName']
-    if config.get('dim', 1) > 1:
-        required.append('poissonRatio')
+    """Required ElasticBeam parameters."""
+    required = ['extents', 'resolution', 'dim', 'element', 'youngModulus', 'poissonRatio', 'forceFieldName']
     missing = [p for p in required if p not in config]
     if missing:
         raise ValueError(f"ElasticBeam: missing required parameters {missing}")
@@ -25,7 +23,7 @@ class ElasticBeam(Sofa.Prefab):
         {'name': 'dim',            'type': 'int',    'help': 'spatial dimension'},
         {'name': 'element',        'type': 'string', 'help': 'element kind (edge/tri/quad/tet/hexa)'},
         {'name': 'youngModulus',   'type': 'double', 'help': "Young's modulus"},
-        {'name': 'poissonRatio',   'type': 'double', 'help': "Poisson's ratio (used when dim > 1)", 'default': 0.0},
+        {'name': 'poissonRatio',   'type': 'double', 'help': "Poisson's ratio"},
         {'name': 'forceFieldName', 'type': 'string', 'help': 'FEM force field component name'},
     ]
 
@@ -62,8 +60,8 @@ class ElasticBeam(Sofa.Prefab):
             # DOFs
             beam.addObject('MechanicalObject', name='dofs', template=VecType)
             # FEM
-            paramsFEM = dict(youngModulus=self.youngModulus.value)
-            if dim > 1:
-                paramsFEM['poissonRatio'] = self.poissonRatio.value
-            beam.addObject(self.forceFieldName.value, name='FEM', template=VecType,
+            paramsFEM = dict(youngModulus=self.youngModulus.value,
+                             poissonRatio=self.poissonRatio.value)
+            beam.addObject(self.forceFieldName.value, name='FEM',
+                           template=f"{VecType},{ELEMENT_CPP[element]}",
                            topology='@topology', **paramsFEM)

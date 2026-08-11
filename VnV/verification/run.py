@@ -15,8 +15,7 @@ import Sofa.Simulation
 
 from VnV.verification.registry import GEOMETRIES, SOLUTIONS
 from VnV.verification.scene import MMSScene
-from VnV.verification.fem import ELEMENT_RULES, l2_error, h1_semi_error
-from VnV.sofa.conventions import CONTAINER
+from VnV.verification.fem import mesh_quadrature, l2_error, h1_semi_error
 
 
 def run(deck_path):
@@ -27,6 +26,7 @@ def run(deck_path):
     geometry = GEOMETRIES[geo_spec.pop("type")](**geo_spec)
     solution = SOLUTIONS[(geometry.dim, deck["function"])](deck)
     element = deck["element"]
+    degree = deck["quadratureDegree"]
 
     print(f"{'mesh':>12} {'h':>10} {'L2':>12} {'rateL2':>7} {'H1':>12} {'rateH1':>7}")
     prev = None
@@ -39,8 +39,7 @@ def run(deck_path):
         beam = root.beam.Beam
         nodes = beam.dofs.rest_position.array()
         uh = beam.dofs.position.array() - nodes
-        conn = getattr(beam.topology, CONTAINER[element][1]).array()
-        element_rule = ELEMENT_RULES[element]()
+        q = mesh_quadrature(beam.topology, nodes, degree)
 
         def u_ex(*coords):
             return solution.u(np.asarray(coords))
@@ -48,8 +47,8 @@ def run(deck_path):
         def grad_u_ex(*coords):
             return solution.grad_u(np.asarray(coords))
 
-        l2 = l2_error(nodes, conn, uh, u_ex, element_rule)
-        h1 = h1_semi_error(nodes, conn, uh, grad_u_ex, element_rule)
+        l2 = l2_error(q, uh, u_ex)
+        h1 = h1_semi_error(q, uh, grad_u_ex)
         h = 1.0 / (res[0] - 1)
         if prev:
             rl2 = f"{np.log(l2 / prev[1]) / np.log(h / prev[0]):.2f}"
