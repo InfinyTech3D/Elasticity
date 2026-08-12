@@ -5,8 +5,6 @@ import numpy as np
 import Sofa
 import Sofa.Core
 
-from .conventions import FACET_FIELD
-
 
 def region_indices(geometry, region, nodes):
     """Node indices whose coordinate satisfies the geometry's named-region predicate."""
@@ -14,34 +12,34 @@ def region_indices(geometry, region, nodes):
     return [i for i, p in enumerate(nodes) if predicate(p)]
 
 
-def region_facets(geometry, region, nodes, topology, element):
-    """SOFA boundary facets whose every node satisfies the region predicate (flat region loci)."""
-    predicate = geometry.regions[region]
-    facet_field = FACET_FIELD[element]
-    if facet_field is None:                       # 1D: a facet is a single vertex
-        candidates = [(i,) for i in range(len(nodes))]
+def region_box(extents, normal, eps):
+    """Vec6 BoxROI box enclosing the boundary face whose outward normal is `normal`."""
+    lo = [-eps, -eps, -eps]
+    hi = [e + eps for e in extents]
+    axis = int(np.argmax(np.abs(normal)))
+    if normal[axis] > 0.0:
+        lo[axis] = extents[axis] - eps
     else:
-        candidates = getattr(topology, facet_field).array()
-    return [tuple(int(i) for i in f) for f in candidates
-            if all(predicate(nodes[i]) for i in f)]
+        hi[axis] = eps
+    return lo + hi
 
 
-class NodalForceAssembler(Sofa.Core.Controller):
-    """Fills a placeholder ConstantForceField after init."""
+class RegionPointLoad(Sofa.Core.Controller):
+    """Fills a ConstantForceField with the point forces of a region (1D: a facet is a vertex)."""
 
-    def __init__(self, dofs, topology, force_field, compute_forces, *args, **kwargs):
+    def __init__(self, geometry, region, dofs, force_field, traction, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.geometry = geometry
+        self.region = region
         self.dofs = dofs
-        self.topology = topology
         self.force_field = force_field
-        self.compute_forces = compute_forces
+        self.traction = traction
 
     def onSimulationInitDoneEvent(self, event):
-        # Use the rest position; displacement BC may move-&-clamp boundary to prescribed location
-        nodes = self.dofs.rest_position.array().copy()
-        F = self.compute_forces(nodes, self.topology)
-        with self.force_field.forces.writeableArray() as forces:
-            forces[:] = F
+        rest = self.dofs.rest_position.array()
+        indices = region_indices(self.geometry, self.region, rest)
+        self.force_field.indices.value = indices
+        self.force_field.forces.value = [self.traction(rest[i]) for i in indices]
 
 
 class NodalFieldFiller(Sofa.Core.Controller):

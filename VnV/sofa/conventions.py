@@ -30,6 +30,13 @@ FACET_FIELD = {
     "hexa": "quads",
 }
 
+BOUNDARY_KIND = {
+    "tri":  "edge",
+    "quad": "edge",
+    "tet":  "tri",
+    "hexa": "quad",
+}
+
 # Element kind -> topological mapping generating it from the grid, or None if grid-native.
 MAPPING = {
     "edge": None,

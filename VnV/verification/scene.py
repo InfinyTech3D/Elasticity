@@ -3,9 +3,8 @@
 import numpy as np
 
 from ..sofa.scene import Scene
-from ..sofa.conventions import ELEMENT_CPP, VEC_BY_DIM
-from ..sofa.controllers import NodalForceAssembler, NodalFieldFiller, RegionClamp, region_facets
-from .fem import FACET_RULES, source_integration_boundary
+from ..sofa.conventions import BOUNDARY_KIND, CONTAINER, ELEMENT_CPP, FACET_FIELD, VEC_BY_DIM
+from ..sofa.controllers import NodalFieldFiller, RegionClamp, RegionPointLoad, region_box
 
 
 class MMSScene(Scene):
@@ -18,7 +17,7 @@ class MMSScene(Scene):
     def apply_bcs(self, beam):
         node = beam.beam
         g, mms, material, element = self.geometry, self.mms, self.material, self.element
-        facet_rule = FACET_RULES[element]()
+        VEC = VEC_BY_DIM[g.dim]
 
         # Prescribed displacement u_ex per region+direction mask: one partial clamp per mask, filled post-init.
         by_mask = {}
@@ -28,35 +27,50 @@ class MMSScene(Scene):
         for mask, regions in by_mask.items():
             constraint = node.addObject('PartialFixedProjectiveConstraint',
                                         name='clamp' + ''.join(str(m) for m in mask),
-                                        template=VEC_BY_DIM[g.dim], fixedDirections=list(mask))
+                                        template=VEC, fixedDirections=list(mask))
             groups.append((constraint, regions, mask))
         node.addObject(RegionClamp(geometry=g, dofs=node.dofs, groups=groups,
                                    displacement=mms.u, name='clampCtrl'))
 
         # Body force from the source: integrated by SOFA's FEMSourceTerm component (SOFA quadrature).
         bf = node.addObject('FEMSourceTerm', name='bodyForce',
-                            template=f"{VEC_BY_DIM[g.dim]},{ELEMENT_CPP[element]}")
+                            template=f"{VEC},{ELEMENT_CPP[element]}")
         node.addObject(NodalFieldFiller(dofs=node.dofs, field=bf,
                                         sample=lambda p: mms.source(np.asarray(p), material),
                                         name='bodyForceCtrl'))
 
-        # Boundary traction sigma.n: still assembled in Python, filled post-init.
-        n = int(np.prod(self.resolution))
-        load = node.addObject('ConstantForceField', name='load', template=VEC_BY_DIM[g.dim],
-                              indices=list(range(n)), forces=[[0.0] * g.dim] * n)
+        boundary = BOUNDARY_KIND.get(element)
+        spacings = [e / (res - 1) for e, res in zip(g.extents, self.resolution) if res > 1]
+        eps = 0.25 * min(spacings)
+        for region in mms.traction_on:
+            normal = np.asarray(g.normals[region])
 
-        def compute(nodes, topology):
-            F = np.zeros((len(nodes), g.dim))
-            for r in mms.traction_on:
-                normal = np.asarray(g.normals[r])
+            def traction(point, n=normal):
+                return mms.stress(np.asarray(point), material) @ n
 
-                def traction(*coords):
-                    return mms.stress(np.asarray(coords), material) @ normal
+            if boundary is None:
+                load = node.addObject('ConstantForceField', name=f'load_{region}', template=VEC,
+                                      indices=[0], forces=[[0.0] * g.dim])
+                node.addObject(RegionPointLoad(geometry=g, region=region, dofs=node.dofs,
+                                               force_field=load, traction=traction,
+                                               name=f'load_{region}Ctrl'))
+                continue
 
-                facets = region_facets(g, r, nodes, topology, element)
-                F += source_integration_boundary(traction, nodes, facets, facet_rule)
-            return F
-
-        node.addObject(NodalForceAssembler(dofs=node.dofs, topology=node.topology,
-                                           force_field=load, compute_forces=compute,
-                                           name='loadCtrl'))
+            facets = FACET_FIELD[element]
+            compute = {f'compute{kind.capitalize()}': kind == facets
+                       for kind in ('edges', 'triangles', 'quads', 'tetrahedra', 'hexahedra')}
+            child = node.addChild(f'neumann_{region}')
+            child.addObject('BoxROI', name='roi', template=VEC, strict=True,
+                            box=[region_box(g.extents, normal, eps)],
+                            position='@../dofs.rest_position',
+                            **{facets: f'@../topology.{facets}'}, **compute)
+            child.addObject(CONTAINER[boundary][0], name='surface',
+                            position='@../dofs.rest_position',
+                            **{CONTAINER[boundary][1]: f'@roi.{facets}InROI'})
+            child.addObject('MechanicalObject', name='surfaceDofs', template=VEC)
+            child.addObject('IdentityMapping', template=f'{VEC},{VEC}', applyRestPosition=True,
+                            input='@../dofs', output='@surfaceDofs')
+            load = child.addObject('FEMSourceTerm', name='traction', topology='@surface',
+                                   template=f'{VEC},{ELEMENT_CPP[boundary]}')
+            child.addObject(NodalFieldFiller(dofs=child.surfaceDofs, field=load,
+                                             sample=traction, name='tractionCtrl'))

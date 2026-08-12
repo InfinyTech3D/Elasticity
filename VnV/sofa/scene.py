@@ -7,6 +7,8 @@ from .prefabs.beam import ElasticBeam
 PLUGINS = [
     "Sofa.Component.SolidMechanics.FEM.Elastic",
     "Sofa.Component.Constraint.Projective",
+    "Sofa.Component.Engine.Select",
+    "Sofa.Component.Mapping.Linear",
     "Sofa.Component.MechanicalLoad",
     "Sofa.Component.LinearSolver.Direct",
     "Sofa.Component.LinearSolver.Iterative",
