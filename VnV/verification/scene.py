@@ -3,7 +3,8 @@
 import numpy as np
 
 from ..sofa.scene import Scene
-from ..sofa.conventions import BOUNDARY_KIND, CONTAINER, ELEMENT_CPP, FACET_FIELD, VEC_BY_DIM
+from ..sofa.conventions import (BOUNDARY_KIND, CONTAINER, ELEMENT_CPP, FACET_FIELD,
+                                VEC_BY_SPATIAL_DIM)
 from ..sofa.controllers import NodalFieldFiller, RegionClamp, RegionPointLoad, region_box
 
 
@@ -16,8 +17,8 @@ class MMSScene(Scene):
 
     def apply_bcs(self, beam):
         node = beam.beam
-        g, mms, material, element = self.geometry, self.mms, self.material, self.element
-        VEC = VEC_BY_DIM[g.dim]
+        g, mms, element = self.geometry, self.mms, self.element
+        VEC = VEC_BY_SPATIAL_DIM[g.spatial_dimensions]
 
         # Prescribed displacement u_ex per region+direction mask: one partial clamp per mask, filled post-init.
         by_mask = {}
@@ -36,7 +37,7 @@ class MMSScene(Scene):
         bf = node.addObject('FEMSourceTerm', name='bodyForce',
                             template=f"{VEC},{ELEMENT_CPP[element]}")
         node.addObject(NodalFieldFiller(dofs=node.dofs, field=bf,
-                                        sample=lambda p: mms.source(np.asarray(p), material),
+                                        sample=lambda p: mms.source(np.asarray(p)),
                                         name='bodyForceCtrl'))
 
         boundary = BOUNDARY_KIND.get(element)
@@ -46,11 +47,11 @@ class MMSScene(Scene):
             normal = np.asarray(g.normals[region])
 
             def traction(point, n=normal):
-                return mms.stress(np.asarray(point), material) @ n
+                return mms.stress(np.asarray(point)) @ n
 
             if boundary is None:
                 load = node.addObject('ConstantForceField', name=f'load_{region}', template=VEC,
-                                      indices=[0], forces=[[0.0] * g.dim])
+                                      indices=[0], forces=[[0.0] * g.spatial_dimensions])
                 node.addObject(RegionPointLoad(geometry=g, region=region, dofs=node.dofs,
                                                force_field=load, traction=traction,
                                                name=f'load_{region}Ctrl'))

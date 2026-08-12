@@ -25,7 +25,7 @@ def run(deck_path):
 
     geo_spec = dict(deck["geometry"])
     geometry = GEOMETRIES[geo_spec.pop("type")](**geo_spec)
-    solution = SOLUTIONS[(geometry.dim, deck["function"])](deck)
+    solution = SOLUTIONS[(geometry.dim, deck["function"])](deck, geometry.spatial_dimensions)
     element = deck["element"]
     degree = deck["quadratureDegree"]
     element_name = ELEMENT_CPP[element]     # SOFA geometry name expected by Sofa.SofaFEM

@@ -8,8 +8,21 @@ import numpy as np
 class Geometry(ABC):
     """A shape parameterization plus its named boundary regions."""
 
-    dim: int
+    dim: int          # topological dimension of the shape (and of the elements meshing it)
     extents: list
+
+    def _init_space(self, spatial_dimensions):
+        """Set the dimension of the space the shape is embedded in; defaults to its own."""
+        self.spatial_dimensions = self.dim if spatial_dimensions is None else spatial_dimensions
+        if not self.dim <= self.spatial_dimensions <= 3:
+            raise ValueError(f"{type(self).__name__}: spatial_dimensions must be in "
+                             f"[{self.dim}, 3], got {self.spatial_dimensions}")
+
+    def _normal(self, axis, sign):
+        """Outward unit normal along `axis`, expressed in the embedding space."""
+        normal = [0.0] * self.spatial_dimensions
+        normal[axis] = sign
+        return normal
 
     @property
     @abstractmethod
@@ -19,7 +32,7 @@ class Geometry(ABC):
     @property
     @abstractmethod
     def normals(self) -> dict:
-        """Outward unit normal per region as ``{name: [n_x, ...]}`` (length dim)."""
+        """Outward unit normal per region as ``{name: [n_x, ...]}`` (length spatial_dimensions)."""
 
 
 class Bar1D(Geometry):
@@ -27,7 +40,8 @@ class Bar1D(Geometry):
 
     dim = 1
 
-    def __init__(self, length):
+    def __init__(self, length, spatialDimensions=None):
+        self._init_space(spatialDimensions)
         self.length = length
 
     @property
@@ -45,7 +59,7 @@ class Bar1D(Geometry):
 
     @property
     def normals(self) -> dict:
-        return {"left": [-1.0], "right": [1.0]}
+        return {"left": self._normal(0, -1.0), "right": self._normal(0, 1.0)}
 
 
 class Beam2D(Geometry):
@@ -53,7 +67,8 @@ class Beam2D(Geometry):
 
     dim = 2
 
-    def __init__(self, length, width):
+    def __init__(self, length, width, spatialDimensions=None):
+        self._init_space(spatialDimensions)
         self.length = length
         self.width = width
 
@@ -74,8 +89,8 @@ class Beam2D(Geometry):
 
     @property
     def normals(self) -> dict:
-        return {"left": [-1.0, 0.0], "right": [1.0, 0.0],
-                "bottom": [0.0, -1.0], "top": [0.0, 1.0]}
+        return {"left": self._normal(0, -1.0), "right": self._normal(0, 1.0),
+                "bottom": self._normal(1, -1.0), "top": self._normal(1, 1.0)}
 
 
 class Beam3D(Geometry):
@@ -83,7 +98,8 @@ class Beam3D(Geometry):
 
     dim = 3
 
-    def __init__(self, length, width, height):
+    def __init__(self, length, width, height, spatialDimensions=None):
+        self._init_space(spatialDimensions)
         self.length = length
         self.width = width
         self.height = height
@@ -107,6 +123,6 @@ class Beam3D(Geometry):
 
     @property
     def normals(self) -> dict:
-        return {"left": [-1.0, 0.0, 0.0], "right": [1.0, 0.0, 0.0],
-                "bottom": [0.0, -1.0, 0.0], "top": [0.0, 1.0, 0.0],
-                "front": [0.0, 0.0, -1.0], "back": [0.0, 0.0, 1.0]}
+        return {"left": self._normal(0, -1.0), "right": self._normal(0, 1.0),
+                "bottom": self._normal(1, -1.0), "top": self._normal(1, 1.0),
+                "front": self._normal(2, -1.0), "back": self._normal(2, 1.0)}

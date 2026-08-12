@@ -3,12 +3,13 @@
 import Sofa
 import Sofa.Core
 
-from ..conventions import VEC_BY_DIM, CONTAINER, MAPPING, ELEMENT_CPP
+from ..conventions import VEC_BY_SPATIAL_DIM, CONTAINER, MAPPING, ELEMENT_CPP
 
 
 def validate_parameters(config):
     """Required ElasticBeam parameters."""
-    required = ['extents', 'resolution', 'dim', 'element', 'youngModulus', 'poissonRatio', 'forceFieldName']
+    required = ['extents', 'resolution', 'spatialDimensions', 'element', 'youngModulus',
+                'poissonRatio', 'forceFieldName']
     missing = [p for p in required if p not in config]
     if missing:
         raise ValueError(f"ElasticBeam: missing required parameters {missing}")
@@ -20,7 +21,7 @@ class ElasticBeam(Sofa.Prefab):
     prefabParameters = [
         {'name': 'extents',        'type': 'Vec3d',  'help': 'box max corner [Lx, Ly, Lz]'},
         {'name': 'resolution',     'type': 'Vec3d',  'help': 'nodes per axis [nx, ny, nz]'},
-        {'name': 'dim',            'type': 'int',    'help': 'spatial dimension'},
+        {'name': 'spatialDimensions', 'type': 'int', 'help': 'dimension of the embedding space'},
         {'name': 'element',        'type': 'string', 'help': 'element kind (edge/tri/quad/tet/hexa)'},
         {'name': 'youngModulus',   'type': 'double', 'help': "Young's modulus"},
         {'name': 'poissonRatio',   'type': 'double', 'help': "Poisson's ratio"},
@@ -32,8 +33,7 @@ class ElasticBeam(Sofa.Prefab):
         Sofa.Prefab.__init__(self, *args, **kwargs)
 
     def init(self):
-        dim = self.dim.value
-        VecType = VEC_BY_DIM[dim]
+        VecType = VEC_BY_SPATIAL_DIM[self.spatialDimensions.value]
         element = self.element.value
         container, connectivity = CONTAINER[element]
         mapping = MAPPING[element]

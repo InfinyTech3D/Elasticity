@@ -7,7 +7,9 @@ from ..geometry.geometry import Bar1D, Beam2D, Beam3D
 # deck "geometry.type" -> geometry class
 GEOMETRIES = {"Bar1D": Bar1D, "Beam2D": Beam2D, "Beam3D": Beam3D}
 
-# (dim, deck "function") -> manufactured-solution class.
+# (topological dim of the geometry, deck "function") -> manufactured-solution class. The key is
+# the dimension of the PDE, not of the space it is solved in: that is spatial_dimensions, which
+# the solution takes as a constructor argument.
 # Solution modules live under verification/<dim>/; the leading-digit dirs need importlib.
 _sinusoidal_1d = importlib.import_module("VnV.verification.1D.sinusoidal")
 _trigonometric_2d = importlib.import_module("VnV.verification.2D.trigonometric")

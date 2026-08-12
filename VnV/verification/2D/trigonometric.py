@@ -1,50 +1,57 @@
-"""2D trigonometric manufactured solution (linear elasticity, plane stress)."""
+"""2D trigonometric manufactured solution (linear elasticity)."""
 
 import numpy as np
 
-from ..manufactured import ManufacturedSolution
+from ..manufactured import ManufacturedSolution, lame
 
 AMPLITUDE = 0.1
 
-
-def lame(material):
-    """Plane-stress Lame parameters (lambda, mu) from the material dict."""
-    E, nu = material["youngModulus"], material["poissonRatio"]
-    lam = E * nu / (1.0 - nu**2)
-    mu = E / (2.0 * (1.0 + nu))
-    return lam, mu
+# In-plane direction masks; the embedding space extends them (see prescribe_displacement_on).
+IN_PLANE_MASKS = {"left": [1, 0], "right": [1, 0], "bottom": [0, 1], "top": [0, 1]}
 
 
 class Trigonometric2D(ManufacturedSolution):
     """u = A[sin(kx x)cos(ky y), cos(kx x)sin(ky y)], kx=2pi/L, ky=2pi/W: ux fixed on x-faces, uy on y-faces, traction elsewhere."""
 
-    prescribe_displacement_on = {"left": [1, 0], "right": [1, 0],
-                                 "bottom": [0, 1], "top": [0, 1]}
     traction_on = ("left", "right", "bottom", "top")
 
-    def __init__(self, deck):
-        super().__init__(deck)
+    def __init__(self, deck, spatial_dimensions):
+        super().__init__(deck, spatial_dimensions)
         geom = deck["geometry"]
         self.kx = 2.0 * np.pi / geom["length"]
         self.ky = 2.0 * np.pi / geom["width"]
+        self.mu, self.lam = lame(self.material, spatial_dimensions)
+
+    @property
+    def prescribe_displacement_on(self):
+        # Fixing the out-of-plane components is what keeps the stiffness matrix regular: their
+        # block is decoupled from the in-plane one and carries no source, so it has a rigid
+        # translation for a null mode -- and u = 0 there, so the constraint costs no physics.
+        return {region: self._pad_mask(mask) for region, mask in IN_PLANE_MASKS.items()}
+
+    def _embed(self, in_plane):
+        """Place an in-plane vector or tensor in the embedding space, padded with zeros."""
+        embedded = np.zeros((self.spatial_dimensions,) * in_plane.ndim)
+        embedded[(slice(0, 2),) * in_plane.ndim] = in_plane
+        return embedded
 
     def u(self, point):
         x, y = point[0], point[1]
         kx, ky = self.kx, self.ky
-        return AMPLITUDE * np.array([np.sin(kx * x) * np.cos(ky * y),
-                                     np.cos(kx * x) * np.sin(ky * y)])
+        return self._embed(AMPLITUDE * np.array([np.sin(kx * x) * np.cos(ky * y),
+                                                 np.cos(kx * x) * np.sin(ky * y)]))
 
     def grad_u(self, point):
         x, y = point[0], point[1]
         kx, ky = self.kx, self.ky
         ss = np.sin(kx * x) * np.sin(ky * y)
         cc = np.cos(kx * x) * np.cos(ky * y)
-        return AMPLITUDE * np.array([[ kx * cc, -ky * ss],
-                                     [-kx * ss,  ky * cc]])
+        return self._embed(AMPLITUDE * np.array([[ kx * cc, -ky * ss],
+                                                 [-kx * ss,  ky * cc]]))
 
-    def source(self, point, material):
-        # f = -div(sigma), linear elasticity with plane-stress Lame parameters
-        lam, mu = lame(material)
+    def source(self, point):
+        # f = -div(sigma); the field is constant out of plane, so f has no out-of-plane component
+        lam, mu = self.lam, self.mu
         x, y = point[0], point[1]
         kx, ky = self.kx, self.ky
         ux = np.sin(kx * x) * np.cos(ky * y)
@@ -57,16 +64,12 @@ class Trigonometric2D(ManufacturedSolution):
         d2uy_dxy = -kx * ky * np.sin(kx * x) * np.cos(ky * y)
         fx = -((lam + 2 * mu) * d2ux_dxx + lam * d2uy_dxy + mu * (d2ux_dyy + d2uy_dxy))
         fy = -(mu * (d2ux_dxy + d2uy_dxx) + lam * d2ux_dxy + (lam + 2 * mu) * d2uy_dyy)
-        return AMPLITUDE * np.array([fx, fy])
+        return self._embed(AMPLITUDE * np.array([fx, fy]))
 
-    def stress(self, point, material):
-        # sigma = lambda tr(eps) I + 2 mu eps
-        lam, mu = lame(material)
+    def stress(self, point):
+        # sigma = lambda tr(eps) I + 2 mu eps, in the embedding space: at spatial_dimensions = 3
+        # this is plane strain, eps_zz = 0 but sigma_zz = lambda tr(eps)
         G = self.grad_u(point)
-        exx, eyy = G[0, 0], G[1, 1]
-        exy = 0.5 * (G[0, 1] + G[1, 0])
-        tr = exx + eyy
-        sxx = lam * tr + 2 * mu * exx
-        syy = lam * tr + 2 * mu * eyy
-        sxy = 2 * mu * exy
-        return np.array([[sxx, sxy], [sxy, syy]])
+        strain = 0.5 * (G + G.T)
+        identity = np.eye(self.spatial_dimensions)
+        return self.lam * np.trace(strain) * identity + 2 * self.mu * strain

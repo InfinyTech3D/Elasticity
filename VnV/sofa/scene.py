@@ -40,12 +40,11 @@ class Scene:
     def build(self, root):
         root.addObject('RequiredPlugin', pluginName=PLUGINS)
         root.addObject('DefaultAnimationLoop')
-        dim = self.geometry.dim
         resolution = [self.resolution[i] if i < len(self.resolution) else 1 for i in range(3)]
         params = dict(name='beam',
                       extents=self.geometry.extents,
                       resolution=resolution,
-                      dim=dim,
+                      spatialDimensions=self.geometry.spatial_dimensions,
                       element=self.element,
                       youngModulus=self.material['youngModulus'],
                       forceFieldName=self.force_field)
