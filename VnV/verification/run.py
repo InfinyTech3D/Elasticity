@@ -2,6 +2,7 @@
 
 import json
 import os
+import pathlib
 import sys
 
 import numpy as np
@@ -117,18 +118,30 @@ def asymptotic_range(history, metric, tolerance):
     return retained if len(retained) >= 2 else []
 
 
-def print_summary(history, tolerance, labels):
-    """Per metric: where the observed order settled, what it is there, and what was expected."""
-    rows = {"settled from": [], "order p": [], "spread": [], "expected": []}
-
+def summarize(history, tolerance, labels):
+    """Per metric: the settled range and the order in it, or None where nothing settled."""
+    summary = {}
     for name in METRICS:
         retained = asymptotic_range(history, name, tolerance)
         orders = [order for _, order in retained]
         # The coarsest level whose pair survived; the pair spans it and the level below, so that
         # lower level is the first one inside the asymptotic range.
-        rows["settled from"].append(labels[retained[0][0] - 1] if retained else "not reached")
-        rows["order p"].append(f"{orders[-1]:.2f}" if retained else "--")
-        rows["spread"].append(f"{max(orders) - min(orders):.2f}" if retained else "--")
+        summary[name] = None if not retained else {
+            "from": labels[retained[0][0] - 1],
+            "order": orders[-1],
+            "spread": max(orders) - min(orders),
+        }
+    return summary
+
+
+def print_summary(summary):
+    """Per metric: where the observed order settled, what it is there, and what was expected."""
+    rows = {"settled from": [], "order p": [], "spread": [], "expected": []}
+    for name in METRICS:
+        settled = summary[name]
+        rows["settled from"].append(settled["from"] if settled else "not reached")
+        rows["order p"].append(f"{settled['order']:.2f}" if settled else "--")
+        rows["spread"].append(f"{settled['spread']:.2f}" if settled else "--")
         rows["expected"].append(f"{FORMAL_ORDER[name]:.1f}")
 
     print()
@@ -137,6 +150,51 @@ def print_summary(history, tolerance, labels):
         for cell in cells:
             row += f" {cell:>12} {'':>6}"
         print(row)
+
+
+def print_overview(results):
+    """One line per deck: the settled order per metric, `--` where none was reached.
+
+    The per-deck tables above distinguish *why* a metric has no order -- floor, oscillation,
+    divergence, never settled -- which this collapses to `--` for the sake of one line per deck.
+    A deck that raised reads `error` instead, so a crash is never mistaken for a metric that simply
+    did not settle.
+    """
+    print()
+    header = f"{'deck':<44}"
+    for name in METRICS:
+        header += f" {name:>9}"
+    print(header)
+
+    for name, summary in results:
+        row = f"{name:<44}"
+        for metric in METRICS:
+            if summary is None:
+                cell = "error"
+            else:
+                settled = summary[metric]
+                cell = f"{settled['order']:.2f}" if settled else "--"
+            row += f" {cell:>9}"
+        print(row)
+
+    row = f"{'expected':<44}"
+    for metric in METRICS:
+        row += f" {FORMAL_ORDER[metric]:>9.1f}"
+    print(row)
+
+
+def run_all(directory):
+    """Every deck in the tree, each with its own table, then one line per deck."""
+    results = []
+    for path in sorted(directory.glob("*D/*.json")):
+        name = f"{path.parent.name}/{path.stem}"
+        print(f"\n--- {name} ---")
+        try:
+            results.append((name, run(path)))
+        except Exception as error:      # one deck that blows up must not hide the other eight
+            print(f"  failed: {type(error).__name__}: {error}")
+            results.append((name, None))
+    print_overview(results)
 
 
 def run(deck_path):
@@ -243,8 +301,15 @@ def run(deck_path):
 
         Sofa.Simulation.unload(root)
 
-    print_summary(history, deck["asymptoticTolerance"], labels)
+    summary = summarize(history, deck["asymptoticTolerance"], labels)
+    print_summary(summary)
+    return summary
 
 
 if __name__ == "__main__":
-    run(sys.argv[1])
+    if len(sys.argv) != 2:
+        sys.exit("usage: run.py <deck>.json | --all")
+    if sys.argv[1] == "--all":
+        run_all(pathlib.Path(__file__).parent)
+    else:
+        run(sys.argv[1])
