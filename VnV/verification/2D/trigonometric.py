@@ -29,12 +29,6 @@ class Trigonometric2D(ManufacturedSolution):
         # translation for a null mode -- and u = 0 there, so the constraint costs no physics.
         return {region: self._pad_mask(mask) for region, mask in IN_PLANE_MASKS.items()}
 
-    def _embed(self, in_plane):
-        """Place an in-plane vector or tensor in the embedding space, padded with zeros."""
-        embedded = np.zeros((self.spatial_dimensions,) * in_plane.ndim)
-        embedded[(slice(0, 2),) * in_plane.ndim] = in_plane
-        return embedded
-
     def u(self, point):
         x, y = point[0], point[1]
         kx, ky = self.kx, self.ky

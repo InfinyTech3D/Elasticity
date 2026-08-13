@@ -33,6 +33,12 @@ class ManufacturedSolution(ABC):
         """Extend a mask to the embedding space, fixing the out-of-plane components."""
         return list(mask) + [1] * (self.spatial_dimensions - len(mask))
 
+    def _embed(self, in_plane):
+        """Place an in-plane vector or tensor in the embedding space, padded with zeros."""
+        embedded = np.zeros((self.spatial_dimensions,) * in_plane.ndim)
+        embedded[(slice(0, in_plane.shape[0]),) * in_plane.ndim] = in_plane
+        return embedded
+
     @staticmethod
     def strain(gradient):
         """Small strain tensor eps = 1/2 (grad u + grad u^T) of a displacement gradient."""

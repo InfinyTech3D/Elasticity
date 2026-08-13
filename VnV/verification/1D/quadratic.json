@@ -1,0 +1,15 @@
+{
+  "geometry":    { "type": "Bar1D", "length": 2.0 },
+  "element":     "edge",
+  "quadratureDegree": 3,
+  "sourceQuadratureDegree": 2,
+  "material":    { "youngModulus": 1e6, "poissonRatio": 0.3 },
+  "forceField":  "LinearSmallStrainFEMForceField",
+  "solvers": {
+    "integration":  { "type": "StaticSolver" },
+    "newton":       { "type": "NewtonRaphsonSolver", "maxNbIterationsNewton": 10, "absoluteResidualStoppingThreshold": 1e-10 },
+    "linearSolver": { "type": "SparseLDLSolver", "template": "CompressedRowSparseMatrixd" }
+  },
+  "mesh":        { "sizes": [[32], [48], [64], [80], [96], [112], [124]] },
+  "function":    "quadratic"
+}
