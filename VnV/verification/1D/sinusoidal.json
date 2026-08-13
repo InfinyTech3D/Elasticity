@@ -10,7 +10,7 @@
     "newton":       { "type": "NewtonRaphsonSolver", "maxNbIterationsNewton": 10, "absoluteResidualStoppingThreshold": 1e-10 },
     "linearSolver": { "type": "SparseLDLSolver", "template": "CompressedRowSparseMatrixd" }
   },
-  "mesh":        { "sizes": [[3], [5], [9], [17], [33], [65], [129]] },
+  "mesh":        { "elements": [2], "levels": 7, "refinementRatio": 2 },
   "asymptoticTolerance": 0.10,
   "function":    "sinusoidal"
 }

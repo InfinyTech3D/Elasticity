@@ -38,6 +38,24 @@ FORMAL_ORDER = {"L2": 2.0, "H1": 1.0, "Enorm": 1.0, "dU": 2.0, "aeuh": 2.0}
 NOISE_FLOOR_RELATIVE = 1e-9
 
 
+def refinement_sweep(mesh, extents):
+    """Element counts and mesh spacing per level, coarsest first.
+
+    A deck states the coarsest element count and how many times to refine it, so refinement at a
+    fixed ratio on every axis is structural: there is no per-level list for a hand-written value to
+    drift in, and the constant ratio the settling test assumes is the ratio the meshes have.
+    """
+    ratio = mesh["refinementRatio"]
+    sweep = []
+    for level in range(mesh["levels"]):
+        elements = [count * ratio ** level for count in mesh["elements"]]
+        # The classical mesh parameter is the largest element diameter, which the coarsest direction
+        # sets; extents carries zeros for inactive axes, so zip against `elements` drops them.
+        spacing = max(extent / count for extent, count in zip(extents, elements))
+        sweep.append((elements, spacing))
+    return sweep
+
+
 def observed_order(history, metric):
     """Order from the two finest levels in `history`, or None plus the reason there is none.
 
@@ -60,6 +78,10 @@ def observed_order(history, metric):
         # *increments*, so unlike e_i < e_i-1 it catches a series that oscillates while still
         # happening to decrease on this one pair. It does not catch a series that stalls -- a
         # stall gives a small positive R -- which is what the noise floor above is for.
+        # Their R is formed from signed solution values, since in solution verification the error is
+        # unknown; a manufactured solution hands us the error itself, so R is formed from the error
+        # norms instead. The ratio is unchanged (both differences flip sign), but a norm cannot go
+        # negative, so a solution oscillating about the exact field can still show a monotone norm.
         increment = error - before
         previous_increment = before - history[-3]["value"][metric]
         ratio = increment / previous_increment if previous_increment else np.inf
@@ -128,7 +150,7 @@ def run(deck_path):
     degree = deck["quadratureDegree"]
     element_name = ELEMENT_CPP[element]     # SOFA geometry name expected by Sofa.SofaFEM
 
-    header = f"{'mesh':>12} {'h':>10}"
+    header = f"{'elements':>12} {'h':>10}"
     for name in METRICS:
         header += f" {name:>12} {'rate':>6}"
     # cpp/py: SOFA's own potential energy against the Python quadrature; should read 1.
@@ -136,7 +158,11 @@ def run(deck_path):
 
     history = []
     labels = []
-    for res in deck["mesh"]["sizes"]:
+    for elements, h in refinement_sweep(deck["mesh"], geometry.extents):
+        # RegularGridTopology's `n` counts grid points, not cells: nodes = elements + 1 per axis,
+        # and its spacing is extent/(n-1). Converting here keeps that the only place the two
+        # conventions meet.
+        res = [count + 1 for count in elements]
         root = Sofa.Core.Node("root")
         MMSScene(geometry=geometry, material=deck["material"], force_field=deck["forceField"],
                  element=element, resolution=res, solvers=deck["solvers"], mms=solution,
@@ -203,12 +229,11 @@ def run(deck_path):
         # picks up the point-load ConstantForceField that stands in for a traction in 1D.
         cpp_energy = beam.FEM.getPotentialEnergy()
 
-        h = 1.0 / (res[0] - 1)
         history.append({"h": h, "value": current,
                         "floor": {name: NOISE_FLOOR_RELATIVE * scales[name] for name in METRICS}})
         history[-1]["order"] = {name: observed_order(history, name) for name in METRICS}
 
-        label = 'x'.join(str(r) for r in res)
+        label = 'x'.join(str(count) for count in elements)
         labels.append(label)
         row = f"{label:>12} {h:>10.5f}"
         for name in METRICS:
