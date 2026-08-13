@@ -26,6 +26,8 @@ from VnV.sofa.conventions import CONTAINER, ELEMENT_CPP
 # rather than silent: it is only safe to read dU as the energy error while aeuh converges faster.
 METRICS = ("L2", "H1", "Enorm", "dU", "aeuh")
 
+ROUNDOFF_RELATIVE_TO_ENERGY = 1e-9
+
 
 def run(deck_path):
     with open(deck_path) as f:
@@ -103,7 +105,10 @@ def run(deck_path):
         h = 1.0 / (res[0] - 1)
         row = f"{'x'.join(str(r) for r in res):>12} {h:>10.5f}"
         for name in METRICS:
-            rate = "" if prev is None else f"{np.log(current[name] / prev[1][name]) / np.log(h / prev[0]):.2f}"
+            at_roundoff = (name == "aeuh"
+                           and current[name] < ROUNDOFF_RELATIVE_TO_ENERGY * u_energy_exact)
+            rate = "" if prev is None or at_roundoff else \
+                f"{np.log(current[name] / prev[1][name]) / np.log(h / prev[0]):.2f}"
             row += f" {current[name]:>12.3e} {rate:>6}"
         print(row + f" {cpp_energy / u_energy:>8.5f}")
 
