@@ -55,7 +55,4 @@ class Trigonometric3D(ManufacturedSolution):
 
     def stress(self, point):
         # sigma = lambda tr(eps) I + 2 mu eps
-        lam, mu = self.lam, self.mu
-        G = self.grad_u(point)
-        eps = 0.5 * (G + G.T)
-        return lam * np.trace(eps) * np.eye(3) + 2 * mu * eps
+        return self.constitutive(self.strain(self.grad_u(point)))

@@ -11,9 +11,11 @@ from ..sofa.controllers import NodalFieldFiller, RegionClamp, RegionPointLoad, r
 class MMSScene(Scene):
     """Scene whose boundary conditions are those of a manufactured solution."""
 
-    def __init__(self, geometry, material, force_field, element, resolution, solvers, mms):
+    def __init__(self, geometry, material, force_field, element, resolution, solvers, mms,
+                 source_quadrature_degree):
         super().__init__(geometry, material, force_field, element, resolution, solvers)
         self.mms = mms
+        self.source_quadrature_degree = source_quadrature_degree
 
     def apply_bcs(self, beam):
         node = beam.beam
@@ -35,7 +37,8 @@ class MMSScene(Scene):
 
         # Body force from the source: integrated by SOFA's FEMSourceTerm component (SOFA quadrature).
         bf = node.addObject('FEMSourceTerm', name='bodyForce',
-                            template=f"{VEC},{ELEMENT_CPP[element]}")
+                            template=f"{VEC},{ELEMENT_CPP[element]}",
+                            quadratureDegree=self.source_quadrature_degree)
         node.addObject(NodalFieldFiller(dofs=node.dofs, field=bf,
                                         sample=lambda p: mms.source(np.asarray(p)),
                                         name='bodyForceCtrl'))
@@ -72,6 +75,7 @@ class MMSScene(Scene):
             child.addObject('IdentityMapping', template=f'{VEC},{VEC}', applyRestPosition=True,
                             input='@../dofs', output='@surfaceDofs')
             load = child.addObject('FEMSourceTerm', name='traction', topology='@surface',
-                                   template=f'{VEC},{ELEMENT_CPP[boundary]}')
+                                   template=f'{VEC},{ELEMENT_CPP[boundary]}',
+                                   quadratureDegree=self.source_quadrature_degree)
             child.addObject(NodalFieldFiller(dofs=child.surfaceDofs, field=load,
                                              sample=traction, name='tractionCtrl'))

@@ -26,7 +26,10 @@ class Sinusoidal1D(ManufacturedSolution):
         E = self.material["youngModulus"]
         return np.array([E * self.k**2 * np.sin(self.k * point[0])])
 
+    def constitutive(self, strain):
+        # no lame() branch exists at d = 1, where lambda + 2 mu = E collapses Hooke to sigma = E eps
+        return self.material["youngModulus"] * strain
+
     def stress(self, point):
         # sigma_xx = E u'
-        E = self.material["youngModulus"]
-        return np.array([[E * self.k * np.cos(self.k * point[0])]])
+        return self.constitutive(self.strain(self.grad_u(point)))

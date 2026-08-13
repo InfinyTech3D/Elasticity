@@ -2,6 +2,8 @@
 
 from abc import ABC, abstractmethod
 
+import numpy as np
+
 import Sofa.SofaDeformable
 
 # Spatial dimension -> SOFA's own Young/Poisson -> (mu, lambda) converter. Going through the
@@ -30,6 +32,20 @@ class ManufacturedSolution(ABC):
     def _pad_mask(self, mask):
         """Extend a mask to the embedding space, fixing the out-of-plane components."""
         return list(mask) + [1] * (self.spatial_dimensions - len(mask))
+
+    @staticmethod
+    def strain(gradient):
+        """Small strain tensor eps = 1/2 (grad u + grad u^T) of a displacement gradient."""
+        return 0.5 * (gradient + gradient.T)
+
+    def constitutive(self, strain):
+        """Hooke's law sigma = lambda tr(eps) I + 2 mu eps; needs self.mu / self.lam, or an override."""
+        return self.lam * np.trace(strain) * np.eye(self.spatial_dimensions) + 2 * self.mu * strain
+
+    def energy_density(self, gradient):
+        """Strain energy density psi = 1/2 sigma : eps, the integrand of the elastic energy."""
+        strain = self.strain(gradient)
+        return 0.5 * np.sum(self.constitutive(strain) * strain)
 
     @abstractmethod
     def u(self, point):

@@ -69,7 +69,4 @@ class Trigonometric2D(ManufacturedSolution):
     def stress(self, point):
         # sigma = lambda tr(eps) I + 2 mu eps, in the embedding space: at spatial_dimensions = 3
         # this is plane strain, eps_zz = 0 but sigma_zz = lambda tr(eps)
-        G = self.grad_u(point)
-        strain = 0.5 * (G + G.T)
-        identity = np.eye(self.spatial_dimensions)
-        return self.lam * np.trace(strain) * identity + 2 * self.mu * strain
+        return self.constitutive(self.strain(self.grad_u(point)))

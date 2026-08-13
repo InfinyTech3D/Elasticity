@@ -56,3 +56,54 @@ def h1_semi_error(nodes, node_indices, element, degree, u_h, grad_u_exact):
         return np.sum(difference * difference)
 
     return float(np.sqrt(integrate_over_mesh(nodes, node_indices, element, degree, integrand)))
+
+
+def energy(nodes, node_indices, element, degree, u_h, energy_density):
+    """Elastic energy of a discrete displacement field: integral over the mesh of psi(grad u_h)."""
+    u_h = np.asarray(u_h)
+
+    def integrand(element_nodes, point, shape_values, physical_gradients):
+        return energy_density(u_h[element_nodes].T @ physical_gradients)
+
+    return float(integrate_over_mesh(nodes, node_indices, element, degree, integrand))
+
+
+def exact_energy(nodes, node_indices, element, degree, grad_u_exact, energy_density):
+    """Elastic energy of the exact field, on the same mesh and quadrature as the discrete one."""
+
+    def integrand(element_nodes, point, shape_values, physical_gradients):
+        return energy_density(grad_u_exact(*point))
+
+    return float(integrate_over_mesh(nodes, node_indices, element, degree, integrand))
+
+
+def orthogonality_defect(nodes, node_indices, element, degree, u_h, grad_u_exact, constitutive):
+    """a(e, u_h) with e = u_h - u: the Galerkin orthogonality defect.
+
+    Zero when u_h solves the continuous variational problem against its own space, which needs the
+    load functional integrated exactly. It is what separates |U - U_h| from 0.5 ||e||_E^2.
+    """
+    u_h = np.asarray(u_h)
+
+    def integrand(element_nodes, point, shape_values, physical_gradients):
+        grad_u_h  = u_h[element_nodes].T @ physical_gradients
+        grad_e    = grad_u_h - grad_u_exact(*point)
+        strain_e  = 0.5 * (grad_e + grad_e.T)
+        strain_uh = 0.5 * (grad_u_h + grad_u_h.T)
+        return np.sum(constitutive(strain_e) * strain_uh)
+
+    return float(integrate_over_mesh(nodes, node_indices, element, degree, integrand))
+
+
+def energy_norm_error(nodes, node_indices, element, degree, u_h, grad_u_exact, energy_density):
+    """Energy norm of the error: sqrt( 2 * integral of psi(grad u_h - grad u_exact) ).
+
+    The norm the Galerkin solution actually minimizes in -- a material-weighted H1 semi-norm.
+    """
+    u_h = np.asarray(u_h)
+
+    def integrand(element_nodes, point, shape_values, physical_gradients):
+        grad_u_h = u_h[element_nodes].T @ physical_gradients
+        return energy_density(grad_u_h - grad_u_exact(*point))
+
+    return float(np.sqrt(2.0 * integrate_over_mesh(nodes, node_indices, element, degree, integrand)))
