@@ -16,8 +16,9 @@ import Sofa.Simulation
 
 from VnV.verification.registry import GEOMETRIES, SOLUTIONS
 from VnV.verification.scene import MMSScene
-from VnV.verification.fem import (energy, energy_norm_error, exact_energy, exact_h1_semi_norm,
-                                  exact_l2_norm, h1_semi_error, l2_error, orthogonality_defect)
+from VnV.verification.fem import (MeshQuadrature, energy, energy_norm_error, exact_energy,
+                                  exact_h1_semi_norm, exact_l2_norm, h1_semi_error, l2_error,
+                                  orthogonality_defect)
 from VnV.sofa.conventions import CONTAINER, ELEMENT_CPP
 
 # Rates to expect for P1: L2 -> 2, H1 -> 1, Enorm -> 1 (it is the material-weighted H1 semi-norm).
@@ -37,6 +38,39 @@ FORMAL_ORDER = {"L2": 2.0, "H1": 1.0, "Enorm": 1.0, "dU": 2.0, "aeuh": 2.0}
 # all five. It catches round-off; it does not catch a loose solver tolerance, which sits far above
 # it and needs a tolerance-tightening run to expose.
 NOISE_FLOOR_RELATIVE = 1e-9
+
+
+def newton_diagnostics(newton):
+    """Iterations, residual reduction and stopping status of the Newton solve at one level.
+
+    The standards require the algebraic error to be shown negligible before a refinement study means
+    anything; these are what SOFA exposes to show it. `residualGraph` is a map Data that binds to
+    Python as its string form, `"residual v0 v1 ..."`, holding *squared* norms (NewtonRaphsonSolver
+    pushes squaredResidualNorm) with entry 0 taken before the first iteration -- hence the sqrt for a
+    norm and len-1 for the iteration count.
+    """
+    if newton is None:
+        return None
+
+    values = []
+    for token in newton.residualGraph.value.split():
+        try:
+            values.append(float(token))
+        except ValueError:      # the map key, not one of its values
+            continue
+
+    status = newton.status.value
+    # ConvergedEquilibrium means the iterations never started because the residual was already zero.
+    # On a loaded MMS scene that is not a success, it means the load never reached the system.
+    healthy = status.startswith("Converged") and status != "ConvergedEquilibrium"
+    # r/r0, not r: a residual is a force while the error norms are not, so only the dimensionless
+    # reduction can be held against anything else in the table. Undefined when it started at zero.
+    reduction = float(np.sqrt(values[-1] / values[0])) if values and values[0] else float("nan")
+    # The problem is linear, so a healthy solve converges in one iteration; anything more is the
+    # stopping criterion fighting round-off, not physics.
+    return {"iterations": max(len(values) - 1, 0),
+            "reduction": reduction,
+            "status": "ok" if healthy else status}
 
 
 def refinement_sweep(mesh, extents):
@@ -118,27 +152,32 @@ def asymptotic_range(history, metric, tolerance):
     return retained if len(retained) >= 2 else []
 
 
-def summarize(history, tolerance, labels):
-    """Per metric: the settled range and the order in it, or None where nothing settled."""
-    summary = {}
+def summarize(history, tolerance, labels, solver):
+    """Per metric: the settled range and the order in it, or None where nothing settled.
+
+    `solver` carries the per-level Newton status alongside, since an order that looks settled while
+    the solve never converged is not evidence of anything.
+    """
+    metrics = {}
     for name in METRICS:
         retained = asymptotic_range(history, name, tolerance)
         orders = [order for _, order in retained]
         # The coarsest level whose pair survived; the pair spans it and the level below, so that
         # lower level is the first one inside the asymptotic range.
-        summary[name] = None if not retained else {
+        metrics[name] = None if not retained else {
             "from": labels[retained[0][0] - 1],
             "order": orders[-1],
             "spread": max(orders) - min(orders),
         }
-    return summary
+    unconverged = [label for label, status in zip(labels, solver) if status not in ("ok", None)]
+    return {"metrics": metrics, "unconverged": unconverged}
 
 
 def print_summary(summary):
     """Per metric: where the observed order settled, what it is there, and what was expected."""
     rows = {"settled from": [], "order p": [], "spread": [], "expected": []}
     for name in METRICS:
-        settled = summary[name]
+        settled = summary["metrics"][name]
         rows["settled from"].append(settled["from"] if settled else "not reached")
         rows["order p"].append(f"{settled['order']:.2f}" if settled else "--")
         rows["spread"].append(f"{settled['spread']:.2f}" if settled else "--")
@@ -150,6 +189,10 @@ def print_summary(summary):
         for cell in cells:
             row += f" {cell:>12} {'':>6}"
         print(row)
+
+    if summary["unconverged"]:
+        print(f"\n  Newton did not converge at: {', '.join(summary['unconverged'])}"
+              f" -- the orders above are contaminated by algebraic error at those levels.")
 
 
 def print_overview(results):
@@ -164,7 +207,7 @@ def print_overview(results):
     header = f"{'deck':<44}"
     for name in METRICS:
         header += f" {name:>9}"
-    print(header)
+    print(header + f" {'solver':>9}")
 
     for name, summary in results:
         row = f"{name:<44}"
@@ -172,15 +215,22 @@ def print_overview(results):
             if summary is None:
                 cell = "error"
             else:
-                settled = summary[metric]
+                settled = summary["metrics"][metric]
                 cell = f"{settled['order']:.2f}" if settled else "--"
             row += f" {cell:>9}"
-        print(row)
+        # A settled order means nothing at a level where the solve did not converge, so the count of
+        # such levels rides along on the same line rather than living only in the per-deck table.
+        if summary is None:
+            solver_cell = "error"
+        else:
+            unconverged = len(summary["unconverged"])
+            solver_cell = "ok" if not unconverged else f"{unconverged} bad"
+        print(row + f" {solver_cell:>9}")
 
     row = f"{'expected':<44}"
     for metric in METRICS:
         row += f" {FORMAL_ORDER[metric]:>9.1f}"
-    print(row)
+    print(row + f" {'ok':>9}")
 
 
 def run_all(directory):
@@ -212,10 +262,12 @@ def run(deck_path):
     for name in METRICS:
         header += f" {name:>12} {'rate':>6}"
     # cpp/py: SOFA's own potential energy against the Python quadrature; should read 1.
-    print(header + f" {'cpp/py':>8}")
+    # nIt / r/r0 / status: the Newton solve, so algebraic error polluting the fine end is visible.
+    print(header + f" {'cpp/py':>8} {'nIt':>4} {'r/r0':>8} status")
 
     history = []
     labels = []
+    solver = []
     for elements, h in refinement_sweep(deck["mesh"], geometry.extents):
         # RegularGridTopology's `n` counts grid points, not cells: nodes = elements + 1 per axis,
         # and its spacing is extent/(n-1). Converting here keeps that the only place the two
@@ -233,14 +285,12 @@ def run(deck_path):
         # node_indices[e] = the mesh-node indices forming element e (from the topology).
         node_indices = getattr(beam.topology, CONTAINER[element][1]).array()
 
-        def u_ex(*coords):
-            return solution.u(np.asarray(coords))
-
-        def grad_u_ex(*coords):
-            return solution.grad_u(np.asarray(coords))
+        # The mapping is shared by every norm below rather than rebuilt inside each of them.
+        quadrature = MeshQuadrature(nodes, node_indices, element_name, degree)
+        u_ex, grad_u_ex = solution.u, solution.grad_u
 
         psi = solution.energy_density
-        u_energy = energy(nodes, node_indices, element_name, degree, uh, psi)
+        u_energy = energy(quadrature, uh, psi)
 
         # The exact energy is integrated in its own right rather than derived from the energy norm.
         # Writing e = u_h - u for the error field, G = grad u, G_h = grad u_h, and C for the
@@ -260,15 +310,14 @@ def run(deck_path):
         # with a fixed rule, so a(e, u_h) = L_h(u_h) - L(u_h) is nonzero and of the same order as
         # the energy error, leaving dU a mixture of the two. Deriving dU from Enorm would assume
         # the defect away; integrating U separately is what lets aeuh measure it.
-        u_energy_exact = exact_energy(nodes, node_indices, element_name, degree, grad_u_ex, psi)
+        u_energy_exact = exact_energy(quadrature, grad_u_ex, psi)
 
         current = {
-            "L2":    l2_error(nodes, node_indices, element_name, degree, uh, u_ex),
-            "H1":    h1_semi_error(nodes, node_indices, element_name, degree, uh, grad_u_ex),
-            "Enorm": energy_norm_error(nodes, node_indices, element_name, degree, uh, grad_u_ex, psi),
+            "L2":    l2_error(quadrature, uh, u_ex),
+            "H1":    h1_semi_error(quadrature, uh, grad_u_ex),
+            "Enorm": energy_norm_error(quadrature, uh, grad_u_ex, psi),
             "dU":    abs(u_energy_exact - u_energy),
-            "aeuh":  abs(orthogonality_defect(nodes, node_indices, element_name, degree, uh,
-                                              grad_u_ex, solution.constitutive)),
+            "aeuh":  abs(orthogonality_defect(quadrature, uh, grad_u_ex, solution.constitutive)),
         }
 
         # Each metric needs a reference magnitude of its own dimension for the relative floor to
@@ -276,8 +325,8 @@ def run(deck_path):
         # exact norms are integrated on this mesh and rule, so the floor and the error it gates are
         # commensurate by construction.
         scales = {
-            "L2":    exact_l2_norm(nodes, node_indices, element_name, degree, u_ex),
-            "H1":    exact_h1_semi_norm(nodes, node_indices, element_name, degree, grad_u_ex),
+            "L2":    exact_l2_norm(quadrature, u_ex),
+            "H1":    exact_h1_semi_norm(quadrature, grad_u_ex),
             "Enorm": np.sqrt(2.0 * u_energy_exact),
             "dU":    u_energy_exact,
             "aeuh":  u_energy_exact,
@@ -297,11 +346,19 @@ def run(deck_path):
         for name in METRICS:
             order, reason = history[-1]["order"][name]
             row += f" {current[name]:>12.3e} {f'{order:.2f}' if order is not None else reason:>6}"
-        print(row + f" {cpp_energy / u_energy:>8.5f}")
+        row += f" {cpp_energy / u_energy:>8.5f}"
+
+        newton = newton_diagnostics(getattr(beam, 'newton', None))
+        solver.append(newton['status'] if newton else None)
+        if newton is None:
+            row += f" {'':>4} {'':>8} no newton"
+        else:
+            row += f" {newton['iterations']:>4} {newton['reduction']:>8.1e} {newton['status']}"
+        print(row)
 
         Sofa.Simulation.unload(root)
 
-    summary = summarize(history, deck["asymptoticTolerance"], labels)
+    summary = summarize(history, deck["asymptoticTolerance"], labels, solver)
     print_summary(summary)
     return summary
 

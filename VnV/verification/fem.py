@@ -5,125 +5,98 @@ import numpy as np
 import Sofa.SofaFEM
 
 
-# --- Integration over the mesh, reusing SOFA's FiniteElement kernel for the element math ---
+class MeshQuadrature:
+    """The reference->physical mapping of a whole mesh, evaluated once and shared by every norm.
 
-def integrate_over_mesh(nodes, node_indices, element, degree, integrand):
-    """Integrate a quantity over the mesh: sum over elements and their quadrature points.
+    Each norm used to walk the mesh itself, calling Sofa.SofaFEM.element_mapping once per element,
+    so a level paid for the same mapping eight times over -- once per quantity -- and paid a pybind
+    crossing per element on each pass. Here SOFA maps every element in one call and the norms become
+    numpy expressions over the result, with no Python loop over elements or quadrature points.
 
-    `integrand(element_nodes, point, shape_values, physical_gradients)` returns the scalar to
-    integrate at one quadrature point:
-        element_nodes      the mesh-node indices of the current element
-        point              physical coordinates of the quadrature point   (dim,)
-        shape_values       shape-function values N_a                       (nodes_per_element,)
-        physical_gradients dN_a/dx_d                                       (nodes_per_element, dim)
+    Array layout throughout: `e` element, `q` quadrature point, `a` node within an element,
+    `c` field component, `d` spatial direction.
     """
-    nodes = np.asarray(nodes)
-    dim = nodes.shape[1]
 
-    # Reference-space data is identical for every element of this type, so fetch it once.
-    weights, shape_values, reference_grads = Sofa.SofaFEM.quadrature_data(element, dim, degree)
+    def __init__(self, nodes, node_indices, element, degree):
+        self.nodes = np.asarray(nodes)
+        # node_indices[e] = the mesh-node indices that form element e.
+        self.node_indices = np.asarray(node_indices)
+        dim = self.nodes.shape[1]
 
-    total = 0.0
-    # node_indices[e] = the mesh-node indices that form element e.
-    for element_nodes in node_indices:
-        node_coordinates = nodes[element_nodes]                                 # (nodes_per_element, dim)
-        physical_gradients, measures = Sofa.SofaFEM.element_mapping(element, node_coordinates, reference_grads)
-        for q, weight in enumerate(weights):
-            point = shape_values[q] @ node_coordinates
-            total += integrand(element_nodes, point, shape_values[q], physical_gradients[q]) * weight * measures[q]
-    return total
+        # Reference-space data is identical for every element of this type, so fetch it once.
+        self.weights, self.shape_values, reference_gradients = \
+            Sofa.SofaFEM.quadrature_data(element, dim, degree)
+        self.physical_gradients, measures = Sofa.SofaFEM.element_mapping_batch(
+            element, self.nodes, self.node_indices, reference_gradients)
+
+        self.points = np.einsum('qa,ead->eqd', self.shape_values, self.nodes[self.node_indices])
+        self.scale = self.weights * measures        # weight * measure at every (element, point)
+
+    def integrate(self, values):
+        """Integrate a scalar given at every (element, quadrature point)."""
+        return float(np.sum(values * self.scale))
+
+    def interpolate(self, field):
+        """A nodal field at every quadrature point: (e, q, c)."""
+        return np.einsum('qa,eac->eqc', self.shape_values, np.asarray(field)[self.node_indices])
+
+    def gradient(self, field):
+        """Gradient of a nodal field: (e, q, c, d) = d(u_c)/dx_d."""
+        return np.einsum('eac,eqad->eqcd',
+                         np.asarray(field)[self.node_indices], self.physical_gradients)
 
 
-def l2_error(nodes, node_indices, element, degree, u_h, u_exact):
+def l2_error(quadrature, u_h, u_exact):
     """L2 error norm: sqrt( integral over the mesh of ||u_h - u_exact||^2 )."""
-    u_h = np.asarray(u_h)
-
-    def integrand(element_nodes, point, shape_values, physical_gradients):
-        u_h_value  = shape_values @ u_h[element_nodes]     # interpolated displacement at the point
-        difference = u_h_value - u_exact(*point)
-        return difference @ difference
-
-    return float(np.sqrt(integrate_over_mesh(nodes, node_indices, element, degree, integrand)))
+    difference = quadrature.interpolate(u_h) - u_exact(quadrature.points)
+    return float(np.sqrt(quadrature.integrate(np.sum(difference * difference, axis=-1))))
 
 
-def h1_semi_error(nodes, node_indices, element, degree, u_h, grad_u_exact):
+def h1_semi_error(quadrature, u_h, grad_u_exact):
     """H1 semi-norm error: sqrt( integral over the mesh of ||grad u_h - grad u_exact||_F^2 )."""
-    u_h = np.asarray(u_h)
-
-    def integrand(element_nodes, point, shape_values, physical_gradients):
-        grad_u_h   = u_h[element_nodes].T @ physical_gradients   # (component_i, direction_d) = d(u_i)/dx_d
-        difference = grad_u_h - grad_u_exact(*point)             # grad_u_exact(point)[i, j] = d(u_i)/dx_j
-        return np.sum(difference * difference)
-
-    return float(np.sqrt(integrate_over_mesh(nodes, node_indices, element, degree, integrand)))
+    difference = quadrature.gradient(u_h) - grad_u_exact(quadrature.points)
+    return float(np.sqrt(quadrature.integrate(np.sum(difference * difference, axis=(-2, -1)))))
 
 
-def exact_l2_norm(nodes, node_indices, element, degree, u_exact):
+def exact_l2_norm(quadrature, u_exact):
     """L2 norm of the exact field: the magnitude l2_error is small or large *relative to*."""
-
-    def integrand(element_nodes, point, shape_values, physical_gradients):
-        value = u_exact(*point)
-        return value @ value
-
-    return float(np.sqrt(integrate_over_mesh(nodes, node_indices, element, degree, integrand)))
+    value = u_exact(quadrature.points)
+    return float(np.sqrt(quadrature.integrate(np.sum(value * value, axis=-1))))
 
 
-def exact_h1_semi_norm(nodes, node_indices, element, degree, grad_u_exact):
+def exact_h1_semi_norm(quadrature, grad_u_exact):
     """H1 semi-norm of the exact field: the magnitude h1_semi_error is measured against."""
-
-    def integrand(element_nodes, point, shape_values, physical_gradients):
-        gradient = grad_u_exact(*point)
-        return np.sum(gradient * gradient)
-
-    return float(np.sqrt(integrate_over_mesh(nodes, node_indices, element, degree, integrand)))
+    gradient = grad_u_exact(quadrature.points)
+    return float(np.sqrt(quadrature.integrate(np.sum(gradient * gradient, axis=(-2, -1)))))
 
 
-def energy(nodes, node_indices, element, degree, u_h, energy_density):
+def energy(quadrature, u_h, energy_density):
     """Elastic energy of a discrete displacement field: integral over the mesh of psi(grad u_h)."""
-    u_h = np.asarray(u_h)
-
-    def integrand(element_nodes, point, shape_values, physical_gradients):
-        return energy_density(u_h[element_nodes].T @ physical_gradients)
-
-    return float(integrate_over_mesh(nodes, node_indices, element, degree, integrand))
+    return quadrature.integrate(energy_density(quadrature.gradient(u_h)))
 
 
-def exact_energy(nodes, node_indices, element, degree, grad_u_exact, energy_density):
+def exact_energy(quadrature, grad_u_exact, energy_density):
     """Elastic energy of the exact field, on the same mesh and quadrature as the discrete one."""
-
-    def integrand(element_nodes, point, shape_values, physical_gradients):
-        return energy_density(grad_u_exact(*point))
-
-    return float(integrate_over_mesh(nodes, node_indices, element, degree, integrand))
+    return quadrature.integrate(energy_density(grad_u_exact(quadrature.points)))
 
 
-def orthogonality_defect(nodes, node_indices, element, degree, u_h, grad_u_exact, constitutive):
+def orthogonality_defect(quadrature, u_h, grad_u_exact, constitutive):
     """a(e, u_h) with e = u_h - u: the Galerkin orthogonality defect.
 
     Zero when u_h solves the continuous variational problem against its own space, which needs the
     load functional integrated exactly. It is what separates |U - U_h| from 0.5 ||e||_E^2.
     """
-    u_h = np.asarray(u_h)
-
-    def integrand(element_nodes, point, shape_values, physical_gradients):
-        grad_u_h  = u_h[element_nodes].T @ physical_gradients
-        grad_e    = grad_u_h - grad_u_exact(*point)
-        strain_e  = 0.5 * (grad_e + grad_e.T)
-        strain_uh = 0.5 * (grad_u_h + grad_u_h.T)
-        return np.sum(constitutive(strain_e) * strain_uh)
-
-    return float(integrate_over_mesh(nodes, node_indices, element, degree, integrand))
+    grad_u_h = quadrature.gradient(u_h)
+    grad_e = grad_u_h - grad_u_exact(quadrature.points)
+    strain_e = 0.5 * (grad_e + np.swapaxes(grad_e, -2, -1))
+    strain_uh = 0.5 * (grad_u_h + np.swapaxes(grad_u_h, -2, -1))
+    return quadrature.integrate(np.sum(constitutive(strain_e) * strain_uh, axis=(-2, -1)))
 
 
-def energy_norm_error(nodes, node_indices, element, degree, u_h, grad_u_exact, energy_density):
+def energy_norm_error(quadrature, u_h, grad_u_exact, energy_density):
     """Energy norm of the error: sqrt( 2 * integral of psi(grad u_h - grad u_exact) ).
 
     The norm the Galerkin solution actually minimizes in -- a material-weighted H1 semi-norm.
     """
-    u_h = np.asarray(u_h)
-
-    def integrand(element_nodes, point, shape_values, physical_gradients):
-        grad_u_h = u_h[element_nodes].T @ physical_gradients
-        return energy_density(grad_u_h - grad_u_exact(*point))
-
-    return float(np.sqrt(2.0 * integrate_over_mesh(nodes, node_indices, element, degree, integrand)))
+    difference = quadrature.gradient(u_h) - grad_u_exact(quadrature.points)
+    return float(np.sqrt(2.0 * quadrature.integrate(energy_density(difference))))

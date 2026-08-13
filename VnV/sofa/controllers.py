@@ -39,7 +39,8 @@ class RegionPointLoad(Sofa.Core.Controller):
         rest = self.dofs.rest_position.array()
         indices = region_indices(self.geometry, self.region, rest)
         self.force_field.indices.value = indices
-        self.force_field.forces.value = [self.traction(rest[i]) for i in indices]
+        # The manufactured fields take a whole array of points, so sample every node in one call.
+        self.force_field.forces.value = self.traction(rest[indices])
 
 
 class NodalFieldFiller(Sofa.Core.Controller):
@@ -53,9 +54,9 @@ class NodalFieldFiller(Sofa.Core.Controller):
 
     def onSimulationInitDoneEvent(self, event):
         rest = self.dofs.rest_position.array()
-        values = np.array([self.sample(p) for p in rest])
+        # One call for the whole mesh: the manufactured fields evaluate over an array of points.
         with self.field.nodalSourceDensity.writeableArray() as arr:
-            arr[:] = values
+            arr[:] = np.asarray(self.sample(rest))
 
 
 class RegionClamp(Sofa.Core.Controller):
@@ -73,11 +74,10 @@ class RegionClamp(Sofa.Core.Controller):
         with self.dofs.position.writeableArray() as pos:
             for constraint, regions, mask in self.groups:
                 idx = sorted({i for r in regions for i in region_indices(self.geometry, r, rest)})
-                if self.displacement is not None:
+                if self.displacement is not None and idx:
                     # Prescribed displacement: move fixed comps to rest + u; rest_position is untouched.
-                    for i in idx:
-                        u_i = self.displacement(rest[i])
-                        for d, fixed in enumerate(mask):
-                            if fixed:
-                                pos[i, d] = rest[i, d] + u_i[d]
+                    u = self.displacement(rest[idx])
+                    for d, fixed in enumerate(mask):
+                        if fixed:
+                            pos[idx, d] = rest[idx, d] + u[:, d]
                 constraint.indices.value = idx

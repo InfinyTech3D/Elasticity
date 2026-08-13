@@ -7,7 +7,10 @@
   "forceField":  "LinearSmallStrainFEMForceField",
   "solvers": {
     "integration":  { "type": "StaticSolver" },
-    "newton":       { "type": "NewtonRaphsonSolver", "maxNbIterationsNewton": 10, "absoluteResidualStoppingThreshold": 1e-10 },
+    "newton":       { "type": "NewtonRaphsonSolver", "maxNbIterationsNewton": 2,
+                      "relativeInitialStoppingThreshold": 1e-6,
+                      "relativeSuccessiveStoppingThreshold": 0,
+                      "absoluteResidualStoppingThreshold": 0 },
     "linearSolver": { "type": "SparseLDLSolver", "template": "CompressedRowSparseMatrixd" }
   },
   "mesh":        { "elements": [2], "levels": 7, "refinementRatio": 2 },

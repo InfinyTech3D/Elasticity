@@ -49,10 +49,10 @@ class ManufacturedSolution(ABC):
                                  for j in range(dimensions))
                              for i in range(dimensions)])
 
-        self.u = self._at_point(displacement, (dimensions,))
-        self.grad_u = self._at_point(gradient, (dimensions, dimensions))
-        self.stress = self._at_point(stress, (dimensions, dimensions))
-        self.source = self._at_point(source, (dimensions,))
+        self.u = self._over_points(displacement, (dimensions,))
+        self.grad_u = self._over_points(gradient, (dimensions, dimensions))
+        self.stress = self._over_points(stress, (dimensions, dimensions))
+        self.source = self._over_points(source, (dimensions,))
         self.constitutive, self.energy_density = self._compile_material_laws()
 
     @abstractmethod
@@ -74,17 +74,62 @@ class ManufacturedSolution(ABC):
         stress = self.constitutive_law(strain)
         return sum(stress[i] * strain[i] for i in range(len(strain))) / 2
 
-    def _at_point(self, expression, shape):
-        """Compile an expression of the coordinates into f(point) -> ndarray of `shape`."""
-        evaluate = sp.lambdify(list(self.coordinates), expression, "numpy")
-        return lambda point: np.asarray(evaluate(*point), dtype=float).reshape(shape)
+    def _over_points(self, expression, shape):
+        """Compile an expression of the coordinates into f(points) -> ndarray of (*batch, *shape).
+
+        `points` is (..., spatial_dimensions), so one point or a whole mesh of quadrature points go
+        through the same callable. Each component is lambdified on its own rather than the matrix as
+        a whole: a component that does not depend on the coordinates lambdifies to a *scalar*, and
+        stacking scalars with array-valued siblings is exactly where the obvious version breaks.
+        """
+        components = [sp.lambdify(list(self.coordinates), entry, "numpy") for entry in expression]
+
+        def evaluate(points):
+            points = np.asarray(points, dtype=float)
+            batch = points.shape[:-1]
+            columns = [points[..., d] for d in range(len(self.coordinates))]
+            values = np.empty(batch + shape, dtype=float)
+            for index, component in zip(np.ndindex(*shape), components):
+                values[(...,) + index] = np.broadcast_to(
+                    np.asarray(component(*columns), dtype=float), batch)
+            return values
+
+        return evaluate
 
     def _compile_material_laws(self):
-        """Compile the material laws into callables over a whole second-order tensor."""
+        """Compile the material laws into callables over batches of second-order tensors.
+
+        The tensor argument is (..., d, d), so a law applies to every quadrature point of a mesh in
+        one call. Built on d^2 scalar symbols rather than a MatrixSymbol because the lambdified code
+        then indexes plain arrays, which broadcast over the leading batch axes for free.
+        """
         dimensions = self.spatial_dimensions
-        tensor = sp.MatrixSymbol("T", dimensions, dimensions)
-        constitutive = sp.lambdify(tensor, self.constitutive_law(sp.Matrix(tensor)), "numpy")
-        energy_density = sp.lambdify(tensor, self.energy_density_law(sp.Matrix(tensor)), "numpy")
+        tensor = sp.Matrix(dimensions, dimensions,
+                           lambda i, j: sp.Symbol(f"T_{i}_{j}"))
+        entries = list(tensor)
+        stress_law = [sp.lambdify(entries, entry, "numpy")
+                      for entry in self.constitutive_law(tensor)]
+        energy_law = sp.lambdify(entries, self.energy_density_law(tensor), "numpy")
+
+        def columns_of(values):
+            values = np.asarray(values, dtype=float)
+            return values, [values[..., i, j]
+                            for i in range(dimensions) for j in range(dimensions)]
+
+        def constitutive(values):
+            values, columns = columns_of(values)
+            batch = values.shape[:-2]
+            stress = np.empty(batch + (dimensions, dimensions), dtype=float)
+            for (i, j), component in zip(np.ndindex(dimensions, dimensions), stress_law):
+                stress[..., i, j] = np.broadcast_to(
+                    np.asarray(component(*columns), dtype=float), batch)
+            return stress
+
+        def energy_density(values):
+            values, columns = columns_of(values)
+            return np.broadcast_to(np.asarray(energy_law(*columns), dtype=float),
+                                   values.shape[:-2])
+
         return constitutive, energy_density
 
     def _pad_mask(self, mask):

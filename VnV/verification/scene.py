@@ -39,8 +39,7 @@ class MMSScene(Scene):
         bf = node.addObject('FEMSourceTerm', name='bodyForce',
                             template=f"{VEC},{ELEMENT_CPP[element]}",
                             quadratureDegree=self.source_quadrature_degree)
-        node.addObject(NodalFieldFiller(dofs=node.dofs, field=bf,
-                                        sample=lambda p: mms.source(np.asarray(p)),
+        node.addObject(NodalFieldFiller(dofs=node.dofs, field=bf, sample=mms.source,
                                         name='bodyForceCtrl'))
 
         boundary = BOUNDARY_KIND.get(element)

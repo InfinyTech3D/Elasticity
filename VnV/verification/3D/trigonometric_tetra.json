@@ -7,9 +7,12 @@
   "forceField":  "LinearSmallStrainFEMForceField",
   "solvers": {
     "integration":  { "type": "StaticSolver" },
-    "newton":       { "type": "NewtonRaphsonSolver", "maxNbIterationsNewton": 10, "absoluteResidualStoppingThreshold": 1e-14 },
+    "newton":       { "type": "NewtonRaphsonSolver", "maxNbIterationsNewton": 2,
+                      "relativeInitialStoppingThreshold": 1e-6,
+                      "relativeSuccessiveStoppingThreshold": 0,
+                      "absoluteResidualStoppingThreshold": 0 },
     "linearSolver": {
-      "type": "PCGLinearSolver", "iterations": 1000, "tolerance": 1e-14,
+      "type": "PCGLinearSolver", "iterations": 1000, "tolerance": 1e-8,
       "system": { "type": "PreconditionedMatrixFreeSystem" },
       "preconditioner": {
         "type": "SSORPreconditioner",
