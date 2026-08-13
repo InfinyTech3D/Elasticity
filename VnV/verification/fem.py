@@ -58,6 +58,26 @@ def h1_semi_error(nodes, node_indices, element, degree, u_h, grad_u_exact):
     return float(np.sqrt(integrate_over_mesh(nodes, node_indices, element, degree, integrand)))
 
 
+def exact_l2_norm(nodes, node_indices, element, degree, u_exact):
+    """L2 norm of the exact field: the magnitude l2_error is small or large *relative to*."""
+
+    def integrand(element_nodes, point, shape_values, physical_gradients):
+        value = u_exact(*point)
+        return value @ value
+
+    return float(np.sqrt(integrate_over_mesh(nodes, node_indices, element, degree, integrand)))
+
+
+def exact_h1_semi_norm(nodes, node_indices, element, degree, grad_u_exact):
+    """H1 semi-norm of the exact field: the magnitude h1_semi_error is measured against."""
+
+    def integrand(element_nodes, point, shape_values, physical_gradients):
+        gradient = grad_u_exact(*point)
+        return np.sum(gradient * gradient)
+
+    return float(np.sqrt(integrate_over_mesh(nodes, node_indices, element, degree, integrand)))
+
+
 def energy(nodes, node_indices, element, degree, u_h, energy_density):
     """Elastic energy of a discrete displacement field: integral over the mesh of psi(grad u_h)."""
     u_h = np.asarray(u_h)
