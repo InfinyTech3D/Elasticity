@@ -5,9 +5,6 @@
 # DataTypes::spatial_dimensions, so Vec2d on a 2D element is plane stress and Vec3d is plane strain.
 VEC_BY_SPATIAL_DIM = {1: "Vec1d", 2: "Vec2d", 3: "Vec3d"}
 
-# Element kind -> its own (topological) dimension, independent of the space it is embedded in.
-TOPOLOGICAL_DIM = {"edge": 1, "tri": 2, "quad": 2, "tet": 3, "hexa": 3}
-
 # Element kind -> (topology container, RegularGridTopology connectivity field).
 CONTAINER = {
     "edge": ("EdgeSetTopologyContainer",        "edges"),

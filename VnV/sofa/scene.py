@@ -21,7 +21,6 @@ PLUGINS = [
     "Sofa.Component.Topology.Container.Grid",
     "Sofa.Component.Topology.Container.Dynamic",
     "Sofa.Component.Topology.Mapping",
-    "Sofa.Component.Visual",
 ]
 
 
@@ -61,9 +60,8 @@ class Scene:
                       spatialDimensions=self.geometry.spatial_dimensions,
                       element=self.element,
                       youngModulus=self.material['youngModulus'],
+                      poissonRatio=self.material['poissonRatio'],
                       forceFieldName=self.force_field)
-        if 'poissonRatio' in self.material:
-            params['poissonRatio'] = self.material['poissonRatio']
         beam = root.addChild(ElasticBeam(**params))
         self.apply_bcs(beam)
         add_solvers(beam.beam, self.solvers)
