@@ -15,5 +15,6 @@
   },
   "mesh":        { "cells": [3], "levels": 7, "refinementRatio": 2 },
   "asymptoticTolerance": 0.10,
-  "function":    "quadratic"
+  "function":    "quadratic",
+  "amplitude":   0.1
 }

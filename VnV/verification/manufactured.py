@@ -25,21 +25,6 @@ _COORDINATES = sp.symbols("x y z")
 _COMPONENT_NAMES = ("u_x", "u_y", "u_z")
 
 
-def _pi_multiples(expression):
-    """Recover pi in the floats a deck's geometry produced: 2 pi / L reads as a wavenumber, 6.2832 not.
-
-    Substituted only where the recovered form is the same number to round-off, so a printed field
-    cannot differ from the solved one. A float that is no multiple of pi is left as the decimal it is,
-    an amplitude reading better as 0.1 than as the 1/10 sympy would otherwise offer.
-    """
-    recovered = {}
-    for value in expression.atoms(sp.Float):
-        candidate = sp.nsimplify(value, [sp.pi], rational=False)
-        if candidate.has(sp.pi) and abs(float(candidate) - float(value)) <= 1e-12 * abs(float(value)):
-            recovered[value] = candidate
-    return expression.subs(recovered)
-
-
 def lame(material, spatial_dimensions):
     """Lame parameters (mu, lambda) of the material, for the given embedding space."""
     return _LAME[spatial_dimensions](material["youngModulus"], material["poissonRatio"])
@@ -54,6 +39,9 @@ class ManufacturedSolution(ABC):
     def __init__(self, deck, spatial_dimensions):
         self.deck = deck
         self.material = deck["material"]
+        # Scale of the field, and with it how far the mesh moves for a given h: a deck asking for an
+        # amplitude near its own extents deforms elements past inversion.
+        self.amplitude = deck["amplitude"]
         self.spatial_dimensions = spatial_dimensions
         dimensions = spatial_dimensions
         self.mu, self.lam = lame(self.material, dimensions)
@@ -87,8 +75,17 @@ class ManufacturedSolution(ABC):
         either wants -- a deck path says which file was run, not which problem was solved.
         """
         names = ("u",) if len(self.displacement_expression) == 1 else _COMPONENT_NAMES
-        return "\n".join(f"${name} = {sp.latex(_pi_multiples(component))}$"
+        return "\n".join(f"${name} = {sp.latex(component)}$"
                          for name, component in zip(names, self.displacement_expression))
+
+    def wavenumber(self, extent):
+        """2 pi / one of the deck's geometric extents, the wavenumber of a full period across it.
+
+        Exact rather than the deck's float, so pi reaches `equation` as pi: a field printing 6.2832
+        where it means 2 pi hides the wave it describes, and recovering the multiple afterwards is
+        guesswork over what is known here.
+        """
+        return 2 * sp.pi / sp.Rational(str(self.deck["geometry"][extent]))
 
     @staticmethod
     def strain(gradient):
@@ -170,3 +167,81 @@ class ManufacturedSolution(ABC):
     def _embed(self, in_plane):
         """Place an in-plane displacement in the embedding space, padded with zeros."""
         return list(in_plane) + [0] * (self.spatial_dimensions - len(in_plane))
+
+
+# --- The fields themselves, one class per deck "function"; registry.py keys them by (dim, name). ---
+
+# In-plane direction masks; the embedding space extends them (see prescribe_displacement_on).
+_IN_PLANE_MASKS = {"left": [1, 0], "right": [1, 0], "bottom": [0, 1], "top": [0, 1]}
+
+
+class Quadratic1D(ManufacturedSolution):
+    """u(x) = [A x^2]: body force constant, so the nodal source is the source; clamped at 'left'."""
+
+    prescribe_displacement_on = {"left": [1]}
+    traction_on = ("right",)
+
+    def displacement(self, coordinates):
+        return [self.amplitude * coordinates[0] ** 2]
+
+
+class Trigonometric1D(ManufacturedSolution):
+    """u(x) = [A sin(k x)], k = 2 pi / L: prescribed (clamped) at 'left', traction at 'right'."""
+
+    prescribe_displacement_on = {"left": [1]}
+    traction_on = ("right",)
+
+    def displacement(self, coordinates):
+        return [self.amplitude * sp.sin(self.wavenumber("length") * coordinates[0])]
+
+
+class Quadratic2D(ManufacturedSolution):
+    """u = A[x^2, y^2]: body force constant and traction linear, so both are nodally exact."""
+
+    traction_on = ("left", "right", "bottom", "top")
+
+    @property
+    def prescribe_displacement_on(self):
+        # Each face prescribes only the component that is constant on it -- u_x on the x-faces is
+        # A x^2 at fixed x -- so the nodal values carry the Dirichlet data without error either.
+        return {region: self._pad_mask(mask) for region, mask in _IN_PLANE_MASKS.items()}
+
+    def displacement(self, coordinates):
+        x, y = coordinates[0], coordinates[1]
+        return self._embed([self.amplitude * x**2, self.amplitude * y**2])
+
+
+class Trigonometric2D(ManufacturedSolution):
+    """u = A[sin(kx x)cos(ky y), cos(kx x)sin(ky y)], kx=2pi/L, ky=2pi/W: ux fixed on x-faces, uy on y-faces, traction elsewhere."""
+
+    traction_on = ("left", "right", "bottom", "top")
+
+    @property
+    def prescribe_displacement_on(self):
+        # Fixing the out-of-plane components is what keeps the stiffness matrix regular: their
+        # block is decoupled from the in-plane one and carries no source, so it has a rigid
+        # translation for a null mode -- and u = 0 there, so the constraint costs no physics.
+        return {region: self._pad_mask(mask) for region, mask in _IN_PLANE_MASKS.items()}
+
+    def displacement(self, coordinates):
+        kx, ky = self.wavenumber("length"), self.wavenumber("width")
+        x, y = coordinates[0], coordinates[1]
+        return self._embed([self.amplitude * sp.sin(kx * x) * sp.cos(ky * y),
+                            self.amplitude * sp.cos(kx * x) * sp.sin(ky * y)])
+
+
+class Trigonometric3D(ManufacturedSolution):
+    """u_i oscillates along all axes; each component fixed on its own faces, traction elsewhere."""
+
+    prescribe_displacement_on = {"left": [1, 0, 0], "right": [1, 0, 0],
+                                 "bottom": [0, 1, 0], "top": [0, 1, 0],
+                                 "front": [0, 0, 1], "back": [0, 0, 1]}
+    traction_on = ("left", "right", "bottom", "top", "front", "back")
+
+    def displacement(self, coordinates):
+        kx, ky, kz = (self.wavenumber("length"), self.wavenumber("width"),
+                      self.wavenumber("height"))
+        x, y, z = coordinates
+        return [self.amplitude * sp.sin(kx * x) * sp.cos(ky * y) * sp.cos(kz * z),
+                self.amplitude * sp.cos(kx * x) * sp.sin(ky * y) * sp.cos(kz * z),
+                self.amplitude * sp.cos(kx * x) * sp.cos(ky * y) * sp.sin(kz * z)]

@@ -1,8 +1,8 @@
 """Name -> class registries for deck-driven verification tests."""
 
-import importlib
-
 from ..geometry.geometry import Bar1D, Beam2D, Beam3D
+from .manufactured import (Quadratic1D, Quadratic2D, Trigonometric1D, Trigonometric2D,
+                           Trigonometric3D)
 
 # deck "geometry.type" -> geometry class
 GEOMETRIES = {"Bar1D": Bar1D, "Beam2D": Beam2D, "Beam3D": Beam3D}
@@ -10,16 +10,10 @@ GEOMETRIES = {"Bar1D": Bar1D, "Beam2D": Beam2D, "Beam3D": Beam3D}
 # (topological dim of the geometry, deck "function") -> manufactured-solution class. The key is
 # the dimension of the PDE, not of the space it is solved in: that is spatial_dimensions, which
 # the solution takes as a constructor argument.
-# Solution modules live under verification/<dim>/; the leading-digit dirs need importlib.
-_sinusoidal_1d = importlib.import_module("VnV.verification.1D.sinusoidal")
-_quadratic_1d = importlib.import_module("VnV.verification.1D.quadratic")
-_trigonometric_2d = importlib.import_module("VnV.verification.2D.trigonometric")
-_quadratic_2d = importlib.import_module("VnV.verification.2D.quadratic")
-_trigonometric_3d = importlib.import_module("VnV.verification.3D.trigonometric")
 SOLUTIONS = {
-    (1, "sinusoidal"): _sinusoidal_1d.Sinusoidal1D,
-    (1, "quadratic"): _quadratic_1d.Quadratic1D,
-    (2, "trigonometric"): _trigonometric_2d.Trigonometric2D,
-    (2, "quadratic"): _quadratic_2d.Quadratic2D,
-    (3, "trigonometric"): _trigonometric_3d.Trigonometric3D,
+    (1, "quadratic"): Quadratic1D,
+    (1, "trigonometric"): Trigonometric1D,
+    (2, "quadratic"): Quadratic2D,
+    (2, "trigonometric"): Trigonometric2D,
+    (3, "trigonometric"): Trigonometric3D,
 }
