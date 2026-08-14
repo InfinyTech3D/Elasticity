@@ -7,7 +7,7 @@
   "forceField":  "LinearSmallStrainFEMForceField",
   "solvers": {
     "integration":  { "type": "StaticSolver" },
-    "newton":       { "type": "NewtonRaphsonSolver", "maxNbIterationsNewton": 2,
+    "newton":       { "type": "NewtonRaphsonSolver", "maxNbIterationsNewton": 1,
                       "relativeInitialStoppingThreshold": 1e-6,
                       "relativeSuccessiveStoppingThreshold": 0,
                       "absoluteResidualStoppingThreshold": 0 },
