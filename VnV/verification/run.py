@@ -42,6 +42,8 @@ NOISE_FLOOR_RELATIVE = 1e-9
 
 GREEN, RED, RESET = "\033[32m", "\033[31m", "\033[0m"
 
+PROGRESS_WIDTH = 20
+
 
 def paint(cell, accepted):
     """Green if the settling test kept this rate, red if it discarded it.
@@ -53,6 +55,28 @@ def paint(cell, accepted):
     if not cell.strip() or not sys.stdout.isatty():
         return cell
     return f"{GREEN if accepted else RED}{cell}{RESET}"
+
+
+def print_progress(level, levels, label):
+    """The level being solved, rewritten in place -- the table cannot appear until the sweep ends.
+
+    The finest levels dominate the wall clock, so the bar tracks levels rather than time: it is there
+    to say which mesh is running, not to predict when it finishes.
+    """
+    if not sys.stdout.isatty():
+        return
+    filled = round(PROGRESS_WIDTH * level / levels)
+    bar = "=" * filled + "-" * (PROGRESS_WIDTH - filled)
+    # \r to reuse the line and \033[K to drop whatever the previous, possibly longer, label left.
+    sys.stdout.write(f"\r  {level}/{levels} [{bar}] {label}\033[K")
+    sys.stdout.flush()
+
+
+def clear_progress():
+    """Leave the line the bar was using empty, so the table starts on a clean row."""
+    if sys.stdout.isatty():
+        sys.stdout.write("\r\033[K")
+        sys.stdout.flush()
 
 
 def newton_diagnostics(newton):
@@ -177,14 +201,11 @@ def summarize(history, tolerance, labels, solver):
     for name in METRICS:
         retained = asymptotic_range(history, name, tolerance)
         orders = [order for _, order in retained]
-        # The coarsest level whose pair survived; the pair spans it and the level below, so that
-        # lower level is the first one inside the asymptotic range.
         metrics[name] = None if not retained else {
-            "from": labels[retained[0][0] - 1],
             "order": orders[-1],
             "spread": max(orders) - min(orders),
-            # The levels whose order was retained, so the table can colour exactly the rates this
-            # summary rests on instead of deciding acceptance a second time of its own accord.
+            # The levels whose order was retained. The table colours exactly these rates, so the
+            # asymptotic range is shown by the run of green rather than named on a line of its own.
             "levels": [index for index, _ in retained],
         }
     unconverged = [label for label, status in zip(labels, solver) if status not in ("ok", None)]
@@ -196,9 +217,8 @@ def print_table(history, labels, diagnostics, accepted):
 
     A rate can only be coloured after the finest level exists: the settled range is the *trailing*
     run of orders, so whether a rate belongs to it is not known when its level is solved. Hence the
-    whole table waits for `accepted`, the retained level indices per metric. The level named by
-    `settled from` is the one below the first retained order, so its own rate reads red -- it opens
-    the asymptotic range without its pair having been retained.
+    whole table waits for `accepted`, the retained level indices per metric, and the trailing run of
+    green rates is what reports the asymptotic range.
     """
     header = f"{'elements':>12} {'h':>10}"
     for name in METRICS:
@@ -226,12 +246,14 @@ def print_table(history, labels, diagnostics, accepted):
 
 
 def print_summary(summary):
-    """Per metric: where the observed order settled, what it is there, and what was expected."""
-    rows = {"settled from": [], "order p": [], "spread": [], "expected": []}
+    """Per metric: the order in the settled range, its spread there, and what was expected.
+
+    Which levels the range covers is not restated here -- the green rates in the table above are it.
+    """
+    rows = {"order p": [], "spread": [], "expected": []}
     for name in METRICS:
         settled = summary["metrics"][name]
-        rows["settled from"].append(settled["from"] if settled else "not reached")
-        rows["order p"].append(f"{settled['order']:.2f}" if settled else "--")
+        rows["order p"].append(f"{settled['order']:.2f}" if settled else "not reached")
         rows["spread"].append(f"{settled['spread']:.2f}" if settled else "--")
         rows["expected"].append(f"{FORMAL_ORDER[name]:.1f}")
 
@@ -294,6 +316,7 @@ def run_all(directory):
         try:
             results.append((name, run(path)))
         except Exception as error:      # one deck that blows up must not hide the other eight
+            clear_progress()            # it raised mid-sweep, so the bar still owns the line
             print(f"  failed: {type(error).__name__}: {error}")
             results.append((name, None))
     print_overview(results)
@@ -310,11 +333,16 @@ def run(deck_path):
     degree = deck["quadratureDegree"]
     element_name = ELEMENT_CPP[element]     # SOFA geometry name expected by Sofa.SofaFEM
 
+    sweep = refinement_sweep(deck["mesh"], geometry.extents)
     history = []
     labels = []
     solver = []
     diagnostics = []
-    for elements, h in refinement_sweep(deck["mesh"], geometry.extents):
+    for level, (elements, h) in enumerate(sweep, start=1):
+        label = 'x'.join(str(count) for count in elements)
+        labels.append(label)
+        print_progress(level, len(sweep), label)
+
         # RegularGridTopology's `n` counts grid points, not cells: nodes = elements + 1 per axis,
         # and its spacing is extent/(n-1). Converting here keeps that the only place the two
         # conventions meet.
@@ -386,14 +414,13 @@ def run(deck_path):
                         "floor": {name: NOISE_FLOOR_RELATIVE * scales[name] for name in METRICS}})
         history[-1]["order"] = {name: observed_order(history, name) for name in METRICS}
 
-        labels.append('x'.join(str(count) for count in elements))
-
         newton = newton_diagnostics(getattr(beam, 'newton', None))
         solver.append(newton['status'] if newton else None)
         diagnostics.append({"cpp": cpp_energy / u_energy, "newton": newton})
 
         Sofa.Simulation.unload(root)
 
+    clear_progress()
     summary = summarize(history, deck["asymptoticTolerance"], labels, solver)
     # The colours read the summary's own retained levels, so a green rate and the `settled from` line
     # cannot tell different stories about the same run.
