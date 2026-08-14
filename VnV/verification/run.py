@@ -44,6 +44,10 @@ GREEN, RED, RESET = "\033[32m", "\033[31m", "\033[0m"
 
 PROGRESS_WIDTH = 20
 
+# The rates-only table's per-metric column, wide enough for the `not reached` the summary can print
+# underneath it. With the diagnostics on, a metric spans its value and rate columns instead.
+RATE_COLUMN = 11
+
 
 def paint(cell, accepted):
     """Green if the settling test kept this rate, red if it discarded it.
@@ -212,20 +216,28 @@ def summarize(history, tolerance, labels, solver):
     return {"metrics": metrics, "unconverged": unconverged}
 
 
-def print_table(history, labels, diagnostics, accepted):
+def print_table(history, labels, diagnostics, accepted, show_diagnostics):
     """One row per level, printed once the sweep is over.
 
     A rate can only be coloured after the finest level exists: the settled range is the *trailing*
     run of orders, so whether a rate belongs to it is not known when its level is solved. Hence the
     whole table waits for `accepted`, the retained level indices per metric, and the trailing run of
     green rates is what reports the asymptotic range.
+
+    The order-of-accuracy test's evidence is the sequence of orders, so that is the default table and
+    the metric name sits over its own rate column. The error magnitudes, the cpp/py energy check and
+    the Newton residuals are what those orders were computed from rather than the evidence itself, so
+    they wait for `show_diagnostics`. The solve's `status` does not: a rate off an unconverged level
+    is not evidence of anything, so the guard stays in both tables.
     """
     header = f"{'elements':>12} {'h':>10}"
     for name in METRICS:
-        header += f" {name:>12} {'rate':>6}"
-    # cpp/py: SOFA's own potential energy against the Python quadrature; should read 1.
-    # nIt / r/r0 / status: the Newton solve, so algebraic error polluting the fine end is visible.
-    print(header + f" {'cpp/py':>8} {'nIt':>4} {'r/r0':>8} status")
+        header += f" {name:>12} {'rate':>6}" if show_diagnostics else f" {name:>{RATE_COLUMN}}"
+    if show_diagnostics:
+        # cpp/py: SOFA's own potential energy against the Python quadrature; should read 1.
+        # nIt / r/r0: the Newton solve, so algebraic error polluting the fine end is visible.
+        header += f" {'cpp/py':>8} {'nIt':>4} {'r/r0':>8}"
+    print(header + " status")
 
     for index, (level, label, diagnostic) in enumerate(zip(history, labels, diagnostics)):
         row = f"{label:>12} {level['h']:>10.5f}"
@@ -234,21 +246,29 @@ def print_table(history, labels, diagnostics, accepted):
             # A discarded pair reads red whether it was discarded for a stated reason or simply fell
             # outside the settled run.
             cell = f"{order:.2f}" if order is not None else reason
-            row += f" {level['value'][name]:>12.3e} {paint(f'{cell:>6}', index in accepted[name])}"
-        row += f" {diagnostic['cpp']:>8.5f}"
+            accepted_here = index in accepted[name]
+            if show_diagnostics:
+                row += f" {level['value'][name]:>12.3e} {paint(f'{cell:>6}', accepted_here)}"
+            else:
+                row += f" {paint(f'{cell:>{RATE_COLUMN}}', accepted_here)}"
 
         newton = diagnostic['newton']
-        if newton is None:
-            row += f" {'':>4} {'':>8} no newton"
-        else:
-            row += f" {newton['iterations']:>4} {newton['reduction']:>8.1e} {newton['status']}"
+        if show_diagnostics:
+            row += f" {diagnostic['cpp']:>8.5f}"
+            if newton is None:
+                row += f" {'':>4} {'':>8}"
+            else:
+                row += f" {newton['iterations']:>4} {newton['reduction']:>8.1e}"
+        row += f" {newton['status'] if newton else 'no newton'}"
         print(row)
 
 
-def print_summary(summary):
+def print_summary(summary, show_diagnostics):
     """Per metric: the order in the settled range, its spread there, and what was expected.
 
     Which levels the range covers is not restated here -- the green rates in the table above are it.
+    `show_diagnostics` only picks the column widths, so these rows stay under the metric they belong
+    to in either table.
     """
     rows = {"order p": [], "spread": [], "expected": []}
     for name in METRICS:
@@ -261,7 +281,7 @@ def print_summary(summary):
     for label, cells in rows.items():
         row = f"{label:>12} {'':>10}"
         for cell in cells:
-            row += f" {cell:>12} {'':>6}"
+            row += f" {cell:>12} {'':>6}" if show_diagnostics else f" {cell:>{RATE_COLUMN}}"
         print(row)
 
     if summary["unconverged"]:
@@ -307,14 +327,14 @@ def print_overview(results):
     print(row + f" {'ok':>9}")
 
 
-def run_all(directory):
+def run_all(directory, show_diagnostics):
     """Every deck in the tree, each with its own table, then one line per deck."""
     results = []
     for path in sorted(directory.glob("*D/*.json")):
         name = f"{path.parent.name}/{path.stem}"
         print(f"\n--- {name} ---")
         try:
-            results.append((name, run(path)))
+            results.append((name, run(path, show_diagnostics)))
         except Exception as error:      # one deck that blows up must not hide the other eight
             clear_progress()            # it raised mid-sweep, so the bar still owns the line
             print(f"  failed: {type(error).__name__}: {error}")
@@ -322,7 +342,7 @@ def run_all(directory):
     print_overview(results)
 
 
-def run(deck_path):
+def run(deck_path, show_diagnostics):
     with open(deck_path) as f:
         deck = json.load(f)
 
@@ -422,22 +442,26 @@ def run(deck_path):
 
     clear_progress()
     summary = summarize(history, deck["asymptoticTolerance"], labels, solver)
-    # The colours read the summary's own retained levels, so a green rate and the `settled from` line
-    # cannot tell different stories about the same run.
+    # The colours read the summary's own retained levels, so the green run and the reported order
+    # cannot tell different stories about the same sweep.
     accepted = {name: set(summary["metrics"][name]["levels"] if summary["metrics"][name] else [])
                 for name in METRICS}
-    print_table(history, labels, diagnostics, accepted)
-    print_summary(summary)
+    print_table(history, labels, diagnostics, accepted, show_diagnostics)
+    print_summary(summary, show_diagnostics)
     return summary
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        sys.exit("usage: run.py <deck>.json | --all")
+    arguments = sys.argv[1:]
+    show_diagnostics = "--diagnostics-on" in arguments
+    if show_diagnostics:
+        arguments.remove("--diagnostics-on")
+    if len(arguments) != 1:
+        sys.exit("usage: run.py <deck>.json | --all [--diagnostics-on]")
     # Before the first table: the plugin load messages are the scene's, not a level's, so they belong
     # above the tables rather than interleaved with their rows.
     load_plugins()
-    if sys.argv[1] == "--all":
-        run_all(pathlib.Path(__file__).parent)
+    if arguments[0] == "--all":
+        run_all(pathlib.Path(__file__).parent, show_diagnostics)
     else:
-        run(sys.argv[1])
+        run(arguments[0], show_diagnostics)
