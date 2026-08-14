@@ -20,6 +20,7 @@ from VnV.verification.fem import (MeshQuadrature, energy, energy_norm_error, exa
                                   exact_h1_semi_norm, exact_l2_norm, h1_semi_error, l2_error,
                                   orthogonality_defect)
 from VnV.sofa.conventions import CONTAINER, ELEMENT_CPP
+from VnV.sofa.scene import load_plugins
 
 # Rates to expect for P1: L2 -> 2, H1 -> 1, Enorm -> 1 (it is the material-weighted H1 semi-norm).
 # dU is quadratic in the error so it would be 2 under Galerkin orthogonality, but it also carries
@@ -366,6 +367,9 @@ def run(deck_path):
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         sys.exit("usage: run.py <deck>.json | --all")
+    # Before the first table: the plugin load messages are the scene's, not a level's, so they belong
+    # above the tables rather than interleaved with their rows.
+    load_plugins()
     if sys.argv[1] == "--all":
         run_all(pathlib.Path(__file__).parent)
     else:

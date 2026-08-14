@@ -1,5 +1,7 @@
 """Generic SOFA scene assembly."""
 
+import SofaRuntime
+
 from .solvers import add_solvers
 from .prefabs.beam import ElasticBeam
 
@@ -21,6 +23,18 @@ PLUGINS = [
     "Sofa.Component.Topology.Mapping",
     "Sofa.Component.Visual",
 ]
+
+
+def load_plugins():
+    """Load the scene's plugins up front; a caller that prints tables calls this before printing.
+
+    PluginManager logs one info line per plugin the first time it is loaded, and the first scene
+    build would otherwise flush all of them into the middle of the first table. Loading an already
+    loaded plugin returns early and logs nothing, so the RequiredPlugin in `build` stays silent
+    afterwards and the scene remains self-contained for runSofa.
+    """
+    for plugin in PLUGINS:
+        SofaRuntime.importPlugin(plugin)
 
 
 class Scene:
