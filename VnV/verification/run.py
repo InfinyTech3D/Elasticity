@@ -125,20 +125,26 @@ def newton_diagnostics(newton):
 
 
 def refinement_sweep(mesh, extents):
-    """Element counts and mesh spacing per level, coarsest first.
+    """Grid cells per axis and mesh spacing per level, coarsest first.
 
-    A deck states the coarsest element count and how many times to refine it, so refinement at a
-    fixed ratio on every axis is structural: there is no per-level list for a hand-written value to
-    drift in, and the constant ratio the settling test assumes is the ratio the meshes have.
+    A deck states the coarsest cell count and how many times to refine it, so refinement at a fixed
+    ratio on every axis is structural: there is no per-level list for a hand-written value to drift
+    in, and the constant ratio the settling test assumes is the ratio the meshes have.
+
+    Cells, not elements: what the deck controls is the grid `RegularGridTopology` lays down, and the
+    topology mappings then split each cell -- 6 tetrahedra per hexahedron, 2 triangles per quad. Those
+    elements are larger than the cell (the tetrahedra span its body diagonal), but by a factor fixed
+    across levels, so it cancels in the ratio the pairwise order divides by and `h` stays the honest
+    mesh parameter for a rate.
     """
     ratio = mesh["refinementRatio"]
     sweep = []
     for level in range(mesh["levels"]):
-        elements = [count * ratio ** level for count in mesh["elements"]]
-        # The classical mesh parameter is the largest element diameter, which the coarsest direction
-        # sets; extents carries zeros for inactive axes, so zip against `elements` drops them.
-        spacing = max(extent / count for extent, count in zip(extents, elements))
-        sweep.append((elements, spacing))
+        cells = [count * ratio ** level for count in mesh["cells"]]
+        # The classical mesh parameter is the largest cell diameter, which the coarsest direction
+        # sets; extents carries zeros for inactive axes, so zip against `cells` drops them.
+        spacing = max(extent / count for extent, count in zip(extents, cells))
+        sweep.append((cells, spacing))
     return sweep
 
 
@@ -240,7 +246,11 @@ def print_table(history, labels, diagnostics, accepted, show_diagnostics):
     guard stays in both tables.
     """
     metrics = METRICS if show_diagnostics else REPORTED
-    header = f"{'elements':>12} {'h':>10}"
+    header = f"{'cells':>12} {'h':>10}"
+    # What the deck asked for is cells; what the mapping made of them is an element count worth
+    # seeing, since it is 6x or 2x the cells for the split element types.
+    if show_diagnostics:
+        header += f" {'elements':>9}"
     for name in metrics:
         header += f" {name:>12} {'rate':>6}" if show_diagnostics else f" {name:>{RATE_COLUMN}}"
     if show_diagnostics:
@@ -251,6 +261,8 @@ def print_table(history, labels, diagnostics, accepted, show_diagnostics):
 
     for index, (level, label, diagnostic) in enumerate(zip(history, labels, diagnostics)):
         row = f"{label:>12} {level['h']:>10.5f}"
+        if show_diagnostics:
+            row += f" {diagnostic['elements']:>9}"
         for name in metrics:
             order, reason = level["order"][name]
             # A discarded pair reads red whether it was discarded for a stated reason or simply fell
@@ -300,7 +312,8 @@ def print_summary(summary, show_diagnostics):
 
     print()
     for label, cells, coloured in rows:
-        row = f"{label:>12} {'':>10}"
+        # Past the cells and h columns, plus the element count the diagnostics table inserts there.
+        row = f"{label:>12} {'':>10}" + (f" {'':>9}" if show_diagnostics else "")
         for index, cell in enumerate(cells):
             padded = f"{cell:>12} {'':>6}" if show_diagnostics else f"{cell:>{RATE_COLUMN}}"
             row += f" {padded if coloured is None else paint(padded, coloured[index])}"
@@ -378,15 +391,15 @@ def run(deck_path, show_diagnostics):
     labels = []
     solver = []
     diagnostics = []
-    for level, (elements, h) in enumerate(sweep, start=1):
-        label = 'x'.join(str(count) for count in elements)
+    for level, (cells, h) in enumerate(sweep, start=1):
+        label = 'x'.join(str(count) for count in cells)
         labels.append(label)
         print_progress(level, len(sweep), label, "sofa")
 
-        # RegularGridTopology's `n` counts grid points, not cells: nodes = elements + 1 per axis,
-        # and its spacing is extent/(n-1). Converting here keeps that the only place the two
-        # conventions meet.
-        res = [count + 1 for count in elements]
+        # RegularGridTopology's `n` counts grid points, not cells: nodes = cells + 1 per axis, and
+        # its spacing is extent/(n-1). Converting here keeps that the only place the two conventions
+        # meet.
+        res = [count + 1 for count in cells]
         root = Sofa.Core.Node("root")
         MMSScene(geometry=geometry, material=deck["material"], force_field=deck["forceField"],
                  element=element, resolution=res, solvers=deck["solvers"], mms=solution,
@@ -458,7 +471,10 @@ def run(deck_path, show_diagnostics):
 
         newton = newton_diagnostics(getattr(beam, 'newton', None))
         solver.append(newton['status'] if newton else None)
-        diagnostics.append({"cpp": cpp_energy / u_energy, "newton": newton})
+        # The element count the mapping actually produced, since the deck states cells: one row of
+        # node_indices per element, so 6x the cells for tetrahedra and 2x for triangles.
+        diagnostics.append({"cpp": cpp_energy / u_energy, "newton": newton,
+                            "elements": len(node_indices)})
 
         Sofa.Simulation.unload(root)
 

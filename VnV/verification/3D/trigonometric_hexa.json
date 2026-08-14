@@ -20,7 +20,7 @@
       }
     }
   },
-  "mesh":        { "elements": [3, 3, 3], "levels": 6, "refinementRatio": 2 },
+  "mesh":        { "cells": [3, 3, 3], "levels": 6, "refinementRatio": 2 },
   "asymptoticTolerance": 0.10,
   "function":    "trigonometric"
 }
