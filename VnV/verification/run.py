@@ -50,6 +50,8 @@ GREEN, RED, RESET = "\033[32m", "\033[31m", "\033[0m"
 
 PROGRESS_WIDTH = 20
 
+FIGURE_DIR = pathlib.Path(__file__).parent / "figures"
+
 # The rates-only table's per-metric column, wide enough for the `not reached` the summary can print
 # underneath it. With the diagnostics on, a metric spans its value and rate columns instead.
 RATE_COLUMN = 11
@@ -122,6 +124,35 @@ def newton_diagnostics(newton):
     return {"iterations": max(len(values) - 1, 0),
             "reduction": reduction,
             "status": "ok" if healthy else status}
+
+
+def pcg_diagnostics(linear):
+    """The linear solver's residual history at one level, per Newton iteration, and its tolerance.
+
+    `PCGLinearSolver` fills a `graph` Data with one curve per call to solve(), so one per Newton
+    iteration, keyed `Error <n>`. It clears the map on AnimateBeginEvent, so the read has to sit
+    after the animate and before the unload. The values are r.M^-1.r over b.b -- squared, and
+    weighted by the preconditioner when one is attached -- which is exactly the quantity the solve
+    tests against `tolerance`, so they are passed on unconverted.
+
+    A map Data binds to Python as one line per key, `<key> <v0> <v1> ...`. This key carries a space,
+    so the first two tokens of a line belong to the key; parsing the line as floats the way the
+    Newton graph is parsed would read the iteration number as a residual. Returns None for a direct
+    solver, which has no iterations to report.
+    """
+    graph = getattr(linear, 'graph', None) if linear is not None else None
+    if graph is None:
+        return None
+
+    curves = {}
+    for line in graph.value.splitlines():
+        tokens = line.split()
+        if len(tokens) < 3 or tokens[0] != "Error":
+            continue
+        curves[int(tokens[1])] = [float(token) for token in tokens[2:]]
+
+    tolerance = getattr(linear, 'tolerance', None)
+    return {"curves": curves, "tolerance": float(tolerance.value) if tolerance else None}
 
 
 def refinement_sweep(mesh, extents):
@@ -360,14 +391,37 @@ def print_overview(results, show_diagnostics):
     print(row + f" {'ok':>9}")
 
 
-def run_all(directory, show_diagnostics):
+def write_plots(deck_path, labels, diagnostics):
+    """Figures for one deck, into `figures/` beside the decks, skipping what a deck cannot report."""
+    # Imported here rather than at module scope: a table-only run should not require matplotlib.
+    from VnV.verification import plots
+
+    deck = pathlib.Path(deck_path)
+    name = f"{deck.parent.name}/{deck.stem}"
+
+    levels = [(label, diagnostic["pcg"]["curves"])
+              for label, diagnostic in zip(labels, diagnostics)
+              if diagnostic["pcg"] and diagnostic["pcg"]["curves"]]
+    if not levels:
+        # A direct solver has no iterations, so there is nothing to draw rather than an empty figure.
+        print("  no linear-solver residuals to plot: this deck solves directly")
+        return
+
+    FIGURE_DIR.mkdir(exist_ok=True)
+    path = FIGURE_DIR / f"{deck.parent.name}_{deck.stem}_pcg.png"
+    tolerance = next(d["pcg"]["tolerance"] for d in diagnostics if d["pcg"])
+    plots.pcg_residuals(name, levels, tolerance, path)
+    print(f"  wrote {path.relative_to(FIGURE_DIR.parent)}")
+
+
+def run_all(directory, show_diagnostics, write_figures):
     """Every deck in the tree, each with its own table, then one line per deck."""
     results = []
     for path in sorted(directory.glob("*D/*.json")):
         name = f"{path.parent.name}/{path.stem}"
         print(f"\n--- {name} ---")
         try:
-            results.append((name, run(path, show_diagnostics)))
+            results.append((name, run(path, show_diagnostics, write_figures)))
         except Exception as error:      # one deck that blows up must not hide the other eight
             clear_progress()            # it raised mid-sweep, so the bar still owns the line
             print(f"  failed: {type(error).__name__}: {error}")
@@ -375,7 +429,7 @@ def run_all(directory, show_diagnostics):
     print_overview(results, show_diagnostics)
 
 
-def run(deck_path, show_diagnostics):
+def run(deck_path, show_diagnostics, write_figures):
     with open(deck_path) as f:
         deck = json.load(f)
 
@@ -474,7 +528,8 @@ def run(deck_path, show_diagnostics):
         # The element count the mapping actually produced, since the deck states cells: one row of
         # node_indices per element, so 6x the cells for tetrahedra and 2x for triangles.
         diagnostics.append({"cpp": cpp_energy / u_energy, "newton": newton,
-                            "elements": len(node_indices)})
+                            "elements": len(node_indices),
+                            "pcg": pcg_diagnostics(getattr(beam, 'linearSolver', None))})
 
         Sofa.Simulation.unload(root)
 
@@ -486,20 +541,22 @@ def run(deck_path, show_diagnostics):
                 for name in METRICS}
     print_table(history, labels, diagnostics, accepted, show_diagnostics)
     print_summary(summary, show_diagnostics)
+    if write_figures:
+        write_plots(deck_path, labels, diagnostics)
     return summary
 
 
 if __name__ == "__main__":
     arguments = sys.argv[1:]
-    show_diagnostics = "--diagnostics-on" in arguments
-    if show_diagnostics:
-        arguments.remove("--diagnostics-on")
+    flags = {flag: flag in arguments for flag in ("--diagnostics-on", "--plots-on")}
+    arguments = [argument for argument in arguments if argument not in flags]
     if len(arguments) != 1:
-        sys.exit("usage: run.py <deck>.json | --all [--diagnostics-on]")
+        sys.exit("usage: run.py <deck>.json | --all [--diagnostics-on] [--plots-on]")
+    show_diagnostics, write_figures = flags["--diagnostics-on"], flags["--plots-on"]
     # Before the first table: the plugin load messages are the scene's, not a level's, so they belong
     # above the tables rather than interleaved with their rows.
     load_plugins()
     if arguments[0] == "--all":
-        run_all(pathlib.Path(__file__).parent, show_diagnostics)
+        run_all(pathlib.Path(__file__).parent, show_diagnostics, write_figures)
     else:
-        run(arguments[0], show_diagnostics)
+        run(arguments[0], show_diagnostics, write_figures)
