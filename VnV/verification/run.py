@@ -40,6 +40,20 @@ FORMAL_ORDER = {"L2": 2.0, "H1": 1.0, "Enorm": 1.0, "dU": 2.0, "aeuh": 2.0}
 # it and needs a tolerance-tightening run to expose.
 NOISE_FLOOR_RELATIVE = 1e-9
 
+GREEN, RED, RESET = "\033[32m", "\033[31m", "\033[0m"
+
+
+def paint(cell, accepted):
+    """Green if the settling test kept this rate, red if it discarded it.
+
+    The cell arrives already padded: the escape sequences are characters as far as a format width is
+    concerned, so colouring before padding would widen the column by the length of the codes. Colour
+    is a reading aid rather than data, hence the tty guard -- a redirected run stays plain text.
+    """
+    if not cell.strip() or not sys.stdout.isatty():
+        return cell
+    return f"{GREEN if accepted else RED}{cell}{RESET}"
+
 
 def newton_diagnostics(newton):
     """Iterations, residual reduction and stopping status of the Newton solve at one level.
@@ -169,9 +183,46 @@ def summarize(history, tolerance, labels, solver):
             "from": labels[retained[0][0] - 1],
             "order": orders[-1],
             "spread": max(orders) - min(orders),
+            # The levels whose order was retained, so the table can colour exactly the rates this
+            # summary rests on instead of deciding acceptance a second time of its own accord.
+            "levels": [index for index, _ in retained],
         }
     unconverged = [label for label, status in zip(labels, solver) if status not in ("ok", None)]
     return {"metrics": metrics, "unconverged": unconverged}
+
+
+def print_table(history, labels, diagnostics, accepted):
+    """One row per level, printed once the sweep is over.
+
+    A rate can only be coloured after the finest level exists: the settled range is the *trailing*
+    run of orders, so whether a rate belongs to it is not known when its level is solved. Hence the
+    whole table waits for `accepted`, the retained level indices per metric. The level named by
+    `settled from` is the one below the first retained order, so its own rate reads red -- it opens
+    the asymptotic range without its pair having been retained.
+    """
+    header = f"{'elements':>12} {'h':>10}"
+    for name in METRICS:
+        header += f" {name:>12} {'rate':>6}"
+    # cpp/py: SOFA's own potential energy against the Python quadrature; should read 1.
+    # nIt / r/r0 / status: the Newton solve, so algebraic error polluting the fine end is visible.
+    print(header + f" {'cpp/py':>8} {'nIt':>4} {'r/r0':>8} status")
+
+    for index, (level, label, diagnostic) in enumerate(zip(history, labels, diagnostics)):
+        row = f"{label:>12} {level['h']:>10.5f}"
+        for name in METRICS:
+            order, reason = level["order"][name]
+            # A discarded pair reads red whether it was discarded for a stated reason or simply fell
+            # outside the settled run.
+            cell = f"{order:.2f}" if order is not None else reason
+            row += f" {level['value'][name]:>12.3e} {paint(f'{cell:>6}', index in accepted[name])}"
+        row += f" {diagnostic['cpp']:>8.5f}"
+
+        newton = diagnostic['newton']
+        if newton is None:
+            row += f" {'':>4} {'':>8} no newton"
+        else:
+            row += f" {newton['iterations']:>4} {newton['reduction']:>8.1e} {newton['status']}"
+        print(row)
 
 
 def print_summary(summary):
@@ -259,16 +310,10 @@ def run(deck_path):
     degree = deck["quadratureDegree"]
     element_name = ELEMENT_CPP[element]     # SOFA geometry name expected by Sofa.SofaFEM
 
-    header = f"{'elements':>12} {'h':>10}"
-    for name in METRICS:
-        header += f" {name:>12} {'rate':>6}"
-    # cpp/py: SOFA's own potential energy against the Python quadrature; should read 1.
-    # nIt / r/r0 / status: the Newton solve, so algebraic error polluting the fine end is visible.
-    print(header + f" {'cpp/py':>8} {'nIt':>4} {'r/r0':>8} status")
-
     history = []
     labels = []
     solver = []
+    diagnostics = []
     for elements, h in refinement_sweep(deck["mesh"], geometry.extents):
         # RegularGridTopology's `n` counts grid points, not cells: nodes = elements + 1 per axis,
         # and its spacing is extent/(n-1). Converting here keeps that the only place the two
@@ -341,25 +386,20 @@ def run(deck_path):
                         "floor": {name: NOISE_FLOOR_RELATIVE * scales[name] for name in METRICS}})
         history[-1]["order"] = {name: observed_order(history, name) for name in METRICS}
 
-        label = 'x'.join(str(count) for count in elements)
-        labels.append(label)
-        row = f"{label:>12} {h:>10.5f}"
-        for name in METRICS:
-            order, reason = history[-1]["order"][name]
-            row += f" {current[name]:>12.3e} {f'{order:.2f}' if order is not None else reason:>6}"
-        row += f" {cpp_energy / u_energy:>8.5f}"
+        labels.append('x'.join(str(count) for count in elements))
 
         newton = newton_diagnostics(getattr(beam, 'newton', None))
         solver.append(newton['status'] if newton else None)
-        if newton is None:
-            row += f" {'':>4} {'':>8} no newton"
-        else:
-            row += f" {newton['iterations']:>4} {newton['reduction']:>8.1e} {newton['status']}"
-        print(row)
+        diagnostics.append({"cpp": cpp_energy / u_energy, "newton": newton})
 
         Sofa.Simulation.unload(root)
 
     summary = summarize(history, deck["asymptoticTolerance"], labels, solver)
+    # The colours read the summary's own retained levels, so a green rate and the `settled from` line
+    # cannot tell different stories about the same run.
+    accepted = {name: set(summary["metrics"][name]["levels"] if summary["metrics"][name] else [])
+                for name in METRICS}
+    print_table(history, labels, diagnostics, accepted)
     print_summary(summary)
     return summary
 
