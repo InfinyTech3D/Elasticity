@@ -391,14 +391,19 @@ def print_overview(results, show_diagnostics):
     print(row + f" {'ok':>9}")
 
 
-def write_plots(deck_path, labels, diagnostics):
-    """Figures for one deck, into `figures/` beside the decks, skipping what a deck cannot report."""
-    # Imported here rather than at module scope: a table-only run should not require matplotlib.
+def plots_module():
+    """matplotlib stays optional: a run that only prints tables must not need it installed."""
     from VnV.verification import plots
+    return plots
 
-    deck = pathlib.Path(deck_path)
-    name = f"{deck.parent.name}/{deck.stem}"
 
+def finish_plots(deck_path, labels, diagnostics, write_figures):
+    """Close out a deck: write the figure when asked, and say when there was nothing to draw.
+
+    A written figure is rendered here rather than saved out of the live window, which now belongs to
+    another process: the file is then the one this run says it wrote, from the same data, and the two
+    paths cannot drift into disagreeing about what the deck did.
+    """
     levels = [(label, diagnostic["pcg"]["curves"])
               for label, diagnostic in zip(labels, diagnostics)
               if diagnostic["pcg"] and diagnostic["pcg"]["curves"]]
@@ -406,22 +411,25 @@ def write_plots(deck_path, labels, diagnostics):
         # A direct solver has no iterations, so there is nothing to draw rather than an empty figure.
         print("  no linear-solver residuals to plot: this deck solves directly")
         return
+    if not write_figures:
+        return                          # it was drawn live and asked for nothing on disk
 
+    deck = pathlib.Path(deck_path)
     FIGURE_DIR.mkdir(exist_ok=True)
     path = FIGURE_DIR / f"{deck.parent.name}_{deck.stem}_pcg.png"
     tolerance = next(d["pcg"]["tolerance"] for d in diagnostics if d["pcg"])
-    plots.pcg_residuals(name, levels, tolerance, path)
+    plots_module().pcg_residuals(f"{deck.parent.name}/{deck.stem}", levels, tolerance, path)
     print(f"  wrote {path.relative_to(FIGURE_DIR.parent)}")
 
 
-def run_all(directory, show_diagnostics, write_figures):
+def run_all(directory, show_diagnostics, write_figures, live_windows):
     """Every deck in the tree, each with its own table, then one line per deck."""
     results = []
     for path in sorted(directory.glob("*D/*.json")):
         name = f"{path.parent.name}/{path.stem}"
         print(f"\n--- {name} ---")
         try:
-            results.append((name, run(path, show_diagnostics, write_figures)))
+            results.append((name, run(path, show_diagnostics, write_figures, live_windows)))
         except Exception as error:      # one deck that blows up must not hide the other eight
             clear_progress()            # it raised mid-sweep, so the bar still owns the line
             print(f"  failed: {type(error).__name__}: {error}")
@@ -429,10 +437,12 @@ def run_all(directory, show_diagnostics, write_figures):
     print_overview(results, show_diagnostics)
 
 
-def run(deck_path, show_diagnostics, write_figures):
+def run(deck_path, show_diagnostics, write_figures, live_windows):
     with open(deck_path) as f:
         deck = json.load(f)
 
+    deck_file = pathlib.Path(deck_path)
+    deck_name = f"{deck_file.parent.name}/{deck_file.stem}"
     geo_spec = dict(deck["geometry"])
     geometry = GEOMETRIES[geo_spec.pop("type")](**geo_spec)
     solution = SOLUTIONS[(geometry.dim, deck["function"])](deck, geometry.spatial_dimensions)
@@ -445,6 +455,7 @@ def run(deck_path, show_diagnostics, write_figures):
     labels = []
     solver = []
     diagnostics = []
+    opened = False                      # the deck's window, raised on the first level that has curves
     for level, (cells, h) in enumerate(sweep, start=1):
         label = 'x'.join(str(count) for count in cells)
         labels.append(label)
@@ -460,9 +471,19 @@ def run(deck_path, show_diagnostics, write_figures):
                  source_quadrature_degree=deck["sourceQuadratureDegree"]).build(root)
         Sofa.Simulation.init(root)
         Sofa.Simulation.animate(root, root.dt.value)
+        beam = root.beam.Beam
+
+        # The solve has returned, so its residual history exists; the norms below are the long part of
+        # a level, which is exactly when a live window should already be showing this level. The window
+        # is another process's, so this only posts the curve -- drawing it costs this run nothing.
+        pcg = pcg_diagnostics(getattr(beam, 'linearSolver', None))
+        if live_windows is not None and pcg and pcg["curves"]:
+            if not opened:
+                live_windows.figure(deck_name, len(sweep), pcg["tolerance"])
+                opened = True
+            live_windows.add(deck_name, label, pcg["curves"])
 
         print_progress(level, len(sweep), label, "norms")
-        beam = root.beam.Beam
         nodes = beam.dofs.rest_position.array()
         uh = beam.dofs.position.array() - nodes
         # node_indices[e] = the mesh-node indices forming element e (from the topology).
@@ -528,8 +549,7 @@ def run(deck_path, show_diagnostics, write_figures):
         # The element count the mapping actually produced, since the deck states cells: one row of
         # node_indices per element, so 6x the cells for tetrahedra and 2x for triangles.
         diagnostics.append({"cpp": cpp_energy / u_energy, "newton": newton,
-                            "elements": len(node_indices),
-                            "pcg": pcg_diagnostics(getattr(beam, 'linearSolver', None))})
+                            "elements": len(node_indices), "pcg": pcg})
 
         Sofa.Simulation.unload(root)
 
@@ -541,22 +561,45 @@ def run(deck_path, show_diagnostics, write_figures):
                 for name in METRICS}
     print_table(history, labels, diagnostics, accepted, show_diagnostics)
     print_summary(summary, show_diagnostics)
-    if write_figures:
-        write_plots(deck_path, labels, diagnostics)
+    if write_figures or live_windows is not None:
+        finish_plots(deck_path, labels, diagnostics, write_figures)
     return summary
 
 
 if __name__ == "__main__":
     arguments = sys.argv[1:]
-    flags = {flag: flag in arguments for flag in ("--diagnostics-on", "--plots-on")}
+    flags = {flag: flag in arguments
+             for flag in ("--diagnostics-on", "--plots-write", "--plots-live")}
     arguments = [argument for argument in arguments if argument not in flags]
     if len(arguments) != 1:
-        sys.exit("usage: run.py <deck>.json | --all [--diagnostics-on] [--plots-on]")
-    show_diagnostics, write_figures = flags["--diagnostics-on"], flags["--plots-on"]
+        sys.exit("usage: run.py <deck>.json | --all "
+                 "[--diagnostics-on] [--plots-write] [--plots-live]")
+    show_diagnostics = flags["--diagnostics-on"]
+    write_figures, live_figures = flags["--plots-write"], flags["--plots-live"]
+
+    # Whether a window can open at all is decided here, on this machine, rather than left for the plot
+    # process to discover: a batch or ssh session with no display still gets its figure, on disk.
+    if live_figures and not plots_module().interactive():
+        print("no display for --plots-live: writing the figures instead")
+        write_figures, live_figures = True, False
+
+    live_windows = None
+    if live_figures:
+        from VnV.verification.live import LiveWindows
+        FIGURE_DIR.mkdir(exist_ok=True)
+        live_windows = LiveWindows(FIGURE_DIR / "live.log")
+
     # Before the first table: the plugin load messages are the scene's, not a level's, so they belong
     # above the tables rather than interleaved with their rows.
     load_plugins()
-    if arguments[0] == "--all":
-        run_all(pathlib.Path(__file__).parent, show_diagnostics, write_figures)
-    else:
-        run(arguments[0], show_diagnostics, write_figures)
+    try:
+        if arguments[0] == "--all":
+            run_all(pathlib.Path(__file__).parent, show_diagnostics, write_figures, live_windows)
+        else:
+            run(arguments[0], show_diagnostics, write_figures, live_windows)
+    finally:
+        # Even if the sweep raised: the windows drawn so far are worth keeping, and the pipe has to be
+        # closed for the child to know nothing more is coming. It is never waited on -- that is what
+        # frees the terminal while the figures stay up.
+        if live_windows is not None:
+            live_windows.detach()
