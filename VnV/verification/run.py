@@ -52,6 +52,9 @@ PROGRESS_WIDTH = 20
 
 FIGURE_DIR = pathlib.Path(__file__).parent / "figures"
 
+# The records are the run's evidence rather than a rendering of it, so they keep their own directory.
+RESULTS_DIR = pathlib.Path(__file__).parent / "results"
+
 # The rates-only table's per-metric column, wide enough for the `not reached` the summary can print
 # underneath it. With the diagnostics on, a metric spans its value and rate columns instead.
 RATE_COLUMN = 11
@@ -397,47 +400,84 @@ def plots_module():
     return plots
 
 
-def finish_plots(deck_path, labels, diagnostics, write_figures):
-    """Close out a deck: write the figure when asked, and say when there was nothing to draw.
+def result_record(deck_name, element, equation, history, labels, diagnostics, summary, accepted):
+    """One deck's sweep as a JSON-able record: what was measured, and what the run concluded from it.
 
-    A written figure is rendered here rather than saved out of the live window, which now belongs to
-    another process: the file is then the one this run says it wrote, from the same data, and the two
-    paths cannot drift into disagreeing about what the deck did.
+    Everything a figure needs is in here, verdicts included, so redrawing is a post-processing step
+    rather than another sweep and a redrawn figure cannot reach a different conclusion than the table
+    did. It is also the run's own record of a verification exercise, which is the thing a report
+    quotes -- hence the diagnostics too, whether or not they were printed.
     """
-    levels = [(label, diagnostic["pcg"]["curves"])
-              for label, diagnostic in zip(labels, diagnostics)
-              if diagnostic["pcg"] and diagnostic["pcg"]["curves"]]
-    if not levels:
-        # A direct solver has no iterations, so there is nothing to draw rather than an empty figure.
-        print("  no linear-solver residuals to plot: this deck solves directly")
+    levels = []
+    for index, (level, label, diagnostic) in enumerate(zip(history, labels, diagnostics)):
+        metrics = {}
+        for name in METRICS:
+            order, reason = level["order"][name]
+            metrics[name] = {"error": level["value"][name],
+                             "floor": level["floor"][name],
+                             "rate": order,
+                             # Empty unless the pair was discarded for a stated reason: floor/osc/div.
+                             "reason": reason,
+                             "accepted": index in accepted[name]}
+        levels.append({"label": label, "h": level["h"], "elements": diagnostic["elements"],
+                       "cpp": diagnostic["cpp"], "metrics": metrics,
+                       "newton": diagnostic["newton"], "pcg": diagnostic["pcg"]})
+
+    return {"deck": deck_name,
+            # The element the deck ran, which the convergence figure turns into a marker shape.
+            "element": element,
+            # The manufactured field in math form, which titles the figures and can be quoted in a
+            # write-up: it comes off the solution itself, so it names the problem that was solved.
+            "equation": equation,
+            # Which metrics the convergence figure draws, decided here rather than in the drawing
+            # code: dU and aeuh are the energy cross-check, recorded but not a convergence claim.
+            "reported": list(REPORTED),
+            "expected": {name: FORMAL_ORDER[name] for name in METRICS},
+            "summary": summary,
+            "levels": levels}
+
+
+def write_results(record):
+    """The record to disk, one file per deck, named as its figures are."""
+    RESULTS_DIR.mkdir(exist_ok=True)
+    path = RESULTS_DIR / f"{record['deck'].replace('/', '_')}.json"
+    with open(path, "w") as f:
+        # default=float: the orders come out of numpy, and json refuses a float64 it is not told about.
+        json.dump(record, f, indent=2, default=float)
+    print(f"  wrote {path.relative_to(RESULTS_DIR.parent)}")
+
+
+def finish_deck(record, output):
+    """Close out a deck: the record first, then the figures drawn from it."""
+    if output["results"]:
+        write_results(record)
+    if not (output["residuals"] or output["convergence"]):
         return
-    if not write_figures:
-        return                          # it was drawn live and asked for nothing on disk
 
-    deck = pathlib.Path(deck_path)
     FIGURE_DIR.mkdir(exist_ok=True)
-    path = FIGURE_DIR / f"{deck.parent.name}_{deck.stem}_pcg.png"
-    tolerance = next(d["pcg"]["tolerance"] for d in diagnostics if d["pcg"])
-    plots_module().pcg_residuals(f"{deck.parent.name}/{deck.stem}", levels, tolerance, path)
-    print(f"  wrote {path.relative_to(FIGURE_DIR.parent)}")
+    for path in plots_module().render(record, FIGURE_DIR, output["residuals"],
+                                     output["convergence"]):
+        print(f"  wrote {path.relative_to(FIGURE_DIR.parent)}")
+    if output["residuals"] and not any(level["pcg"] for level in record["levels"]):
+        print("  no linear-solver residuals to plot: this deck solves directly")
 
 
-def run_all(directory, show_diagnostics, write_figures, live_windows):
+def run_all(directory, output):
     """Every deck in the tree, each with its own table, then one line per deck."""
     results = []
     for path in sorted(directory.glob("*D/*.json")):
         name = f"{path.parent.name}/{path.stem}"
         print(f"\n--- {name} ---")
         try:
-            results.append((name, run(path, show_diagnostics, write_figures, live_windows)))
+            results.append((name, run(path, output)))
         except Exception as error:      # one deck that blows up must not hide the other eight
             clear_progress()            # it raised mid-sweep, so the bar still owns the line
             print(f"  failed: {type(error).__name__}: {error}")
             results.append((name, None))
-    print_overview(results, show_diagnostics)
+    print_overview(results, output["diagnostics"])
 
 
-def run(deck_path, show_diagnostics, write_figures, live_windows):
+def run(deck_path, output):
     with open(deck_path) as f:
         deck = json.load(f)
 
@@ -477,9 +517,11 @@ def run(deck_path, show_diagnostics, write_figures, live_windows):
         # a level, which is exactly when a live window should already be showing this level. The window
         # is another process's, so this only posts the curve -- drawing it costs this run nothing.
         pcg = pcg_diagnostics(getattr(beam, 'linearSolver', None))
+        live_windows = output["live"]
         if live_windows is not None and pcg and pcg["curves"]:
             if not opened:
-                live_windows.figure(deck_name, len(sweep), pcg["tolerance"])
+                live_windows.figure(deck_name, solution.equation, element, len(sweep),
+                                    pcg["tolerance"])
                 opened = True
             live_windows.add(deck_name, label, pcg["curves"])
 
@@ -559,47 +601,54 @@ def run(deck_path, show_diagnostics, write_figures, live_windows):
     # cannot tell different stories about the same sweep.
     accepted = {name: set(summary["metrics"][name]["levels"] if summary["metrics"][name] else [])
                 for name in METRICS}
-    print_table(history, labels, diagnostics, accepted, show_diagnostics)
-    print_summary(summary, show_diagnostics)
-    if write_figures or live_windows is not None:
-        finish_plots(deck_path, labels, diagnostics, write_figures)
+    print_table(history, labels, diagnostics, accepted, output["diagnostics"])
+    print_summary(summary, output["diagnostics"])
+    finish_deck(result_record(deck_name, element, solution.equation, history, labels, diagnostics,
+                              summary, accepted), output)
     return summary
 
 
 if __name__ == "__main__":
     arguments = sys.argv[1:]
-    flags = {flag: flag in arguments
-             for flag in ("--diagnostics-on", "--plots-write", "--plots-live")}
+    # The residual figure exists while the sweep runs, so it has a live form; the convergence figure is
+    # the outcome of the whole sweep and only exists at the end, so it is written or not at all.
+    flags = {flag: flag in arguments for flag in ("--diagnostics-on", "--residuals-live",
+                                                  "--residuals-write", "--convergence-write",
+                                                  "--results-write")}
     arguments = [argument for argument in arguments if argument not in flags]
     if len(arguments) != 1:
-        sys.exit("usage: run.py <deck>.json | --all "
-                 "[--diagnostics-on] [--plots-write] [--plots-live]")
-    show_diagnostics = flags["--diagnostics-on"]
-    write_figures, live_figures = flags["--plots-write"], flags["--plots-live"]
+        sys.exit("usage: run.py <deck>.json | --all [--diagnostics-on] [--residuals-live] "
+                 "[--residuals-write] [--convergence-write] [--results-write]")
+
+    output = {"diagnostics": flags["--diagnostics-on"],
+              "residuals": flags["--residuals-write"],
+              "convergence": flags["--convergence-write"],
+              "results": flags["--results-write"],
+              "live": None}
 
     # Whether a window can open at all is decided here, on this machine, rather than left for the plot
     # process to discover: a batch or ssh session with no display still gets its figure, on disk.
-    if live_figures and not plots_module().interactive():
-        print("no display for --plots-live: writing the figures instead")
-        write_figures, live_figures = True, False
+    live_residuals = flags["--residuals-live"]
+    if live_residuals and not plots_module().interactive():
+        print("no display for --residuals-live: writing the residual figure instead")
+        output["residuals"], live_residuals = True, False
 
-    live_windows = None
-    if live_figures:
+    if live_residuals:
         from VnV.verification.live import LiveWindows
         FIGURE_DIR.mkdir(exist_ok=True)
-        live_windows = LiveWindows(FIGURE_DIR / "live.log")
+        output["live"] = LiveWindows(FIGURE_DIR / "live.log")
 
     # Before the first table: the plugin load messages are the scene's, not a level's, so they belong
     # above the tables rather than interleaved with their rows.
     load_plugins()
     try:
         if arguments[0] == "--all":
-            run_all(pathlib.Path(__file__).parent, show_diagnostics, write_figures, live_windows)
+            run_all(pathlib.Path(__file__).parent, output)
         else:
-            run(arguments[0], show_diagnostics, write_figures, live_windows)
+            run(arguments[0], output)
     finally:
         # Even if the sweep raised: the windows drawn so far are worth keeping, and the pipe has to be
         # closed for the child to know nothing more is coming. It is never waited on -- that is what
         # frees the terminal while the figures stay up.
-        if live_windows is not None:
-            live_windows.detach()
+        if output["live"] is not None:
+            output["live"].detach()

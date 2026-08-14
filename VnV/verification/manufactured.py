@@ -22,6 +22,23 @@ _LAME = {1: toLameParameters1D,
 
 _COORDINATES = sp.symbols("x y z")
 
+_COMPONENT_NAMES = ("u_x", "u_y", "u_z")
+
+
+def _pi_multiples(expression):
+    """Recover pi in the floats a deck's geometry produced: 2 pi / L reads as a wavenumber, 6.2832 not.
+
+    Substituted only where the recovered form is the same number to round-off, so a printed field
+    cannot differ from the solved one. A float that is no multiple of pi is left as the decimal it is,
+    an amplitude reading better as 0.1 than as the 1/10 sympy would otherwise offer.
+    """
+    recovered = {}
+    for value in expression.atoms(sp.Float):
+        candidate = sp.nsimplify(value, [sp.pi], rational=False)
+        if candidate.has(sp.pi) and abs(float(candidate) - float(value)) <= 1e-12 * abs(float(value)):
+            recovered[value] = candidate
+    return expression.subs(recovered)
+
 
 def lame(material, spatial_dimensions):
     """Lame parameters (mu, lambda) of the material, for the given embedding space."""
@@ -42,7 +59,9 @@ class ManufacturedSolution(ABC):
         self.mu, self.lam = lame(self.material, dimensions)
 
         self.coordinates = sp.Matrix(_COORDINATES[:dimensions])
-        displacement = sp.Matrix(self.displacement(self.coordinates))
+        # Kept symbolic as well as compiled: `equation` is derived from this, so what a figure or a
+        # write-up states is the field that was solved rather than a second, hand-written copy of it.
+        self.displacement_expression = displacement = sp.Matrix(self.displacement(self.coordinates))
         gradient = displacement.jacobian(self.coordinates)
         stress = self.constitutive_law(self.strain(gradient))
         source = -sp.Matrix([sum(sp.diff(stress[i, j], self.coordinates[j])
@@ -58,6 +77,18 @@ class ManufacturedSolution(ABC):
     @abstractmethod
     def displacement(self, coordinates):
         """Exact displacement as sympy expressions, one per embedding-space component."""
+
+    @property
+    def equation(self):
+        """The manufactured displacement in math form, one line per component.
+
+        Inline LaTeX, which is also what matplotlib's mathtext reads, so the same string titles a
+        figure and drops into a write-up. It names the field a run verified, which is what a reader of
+        either wants -- a deck path says which file was run, not which problem was solved.
+        """
+        names = ("u",) if len(self.displacement_expression) == 1 else _COMPONENT_NAMES
+        return "\n".join(f"${name} = {sp.latex(_pi_multiples(component))}$"
+                         for name, component in zip(names, self.displacement_expression))
 
     @staticmethod
     def strain(gradient):

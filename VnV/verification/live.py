@@ -45,9 +45,10 @@ class LiveWindows:
             **_detached())
         self.broken = False
 
-    def figure(self, deck, levels, tolerance):
+    def figure(self, deck, equation, element, levels, tolerance):
         """Open a window for one deck. `levels` up front keeps the colour of a level fixed for good."""
-        self._send({"figure": deck, "levels": levels, "tolerance": tolerance})
+        self._send({"figure": deck, "equation": equation, "element": element,
+                    "levels": levels, "tolerance": tolerance})
 
     def add(self, deck, label, curves):
         self._send({"figure": deck, "label": label, "curves": curves})
@@ -120,7 +121,8 @@ def serve():
                 curves = {int(key): values for key, values in message["curves"].items()}
                 figures[deck].add(message["label"], curves)
             else:
-                figures[deck] = plots.LivePlot(deck, message["levels"], message["tolerance"])
+                figures[deck] = plots.LivePlot(message["equation"], message["element"],
+                                              message["levels"], message["tolerance"])
         except Exception as error:      # a closed window must not take the other decks down with it
             figures.pop(deck, None)
             print(f"dropped {deck}: {type(error).__name__}: {error}", file=sys.stderr)
