@@ -29,6 +29,12 @@ from VnV.sofa.scene import load_plugins
 # rather than silent: it is only safe to read dU as the energy error while aeuh converges faster.
 METRICS = ("L2", "H1", "Enorm", "dU", "aeuh")
 
+# The norms are what the order-of-accuracy test is about; dU and aeuh exist to keep each other honest
+# -- dU only reads as the energy error while aeuh converges faster, and the pair has to satisfy
+# dU = 0.5 Enorm^2 + aeuh. That makes them a cross-check on the energy identity rather than a claim of
+# their own, so they are computed on every level but shown only with the diagnostics on.
+REPORTED = ("L2", "H1", "Enorm")
+
 # The order-of-accuracy test compares the observed order against the order above; the observed one
 # is only an estimate of it inside the asymptotic range.
 FORMAL_ORDER = {"L2": 2.0, "H1": 1.0, "Enorm": 1.0, "dU": 2.0, "aeuh": 2.0}
@@ -61,18 +67,20 @@ def paint(cell, accepted):
     return f"{GREEN if accepted else RED}{cell}{RESET}"
 
 
-def print_progress(level, levels, label):
-    """The level being solved, rewritten in place -- the table cannot appear until the sweep ends.
+def print_progress(level, levels, label, phase):
+    """The level being run and which half of it, rewritten in place -- the table waits for the sweep.
 
     The finest levels dominate the wall clock, so the bar tracks levels rather than time: it is there
-    to say which mesh is running, not to predict when it finishes.
+    to say which mesh is running, not to predict when it finishes. `phase` separates the SOFA side of
+    a level -- scene build, init, solve -- from the Python norms, the two places a level can sit for a
+    while. The label is padded so the phase does not shift as the element counts grow.
     """
     if not sys.stdout.isatty():
         return
     filled = round(PROGRESS_WIDTH * level / levels)
     bar = "=" * filled + "-" * (PROGRESS_WIDTH - filled)
-    # \r to reuse the line and \033[K to drop whatever the previous, possibly longer, label left.
-    sys.stdout.write(f"\r  {level}/{levels} [{bar}] {label}\033[K")
+    # \r to reuse the line and \033[K to drop whatever the previous, possibly longer, line left.
+    sys.stdout.write(f"\r  {level}/{levels} [{bar}] {label:<14} {phase}\033[K")
     sys.stdout.flush()
 
 
@@ -224,14 +232,16 @@ def print_table(history, labels, diagnostics, accepted, show_diagnostics):
     whole table waits for `accepted`, the retained level indices per metric, and the trailing run of
     green rates is what reports the asymptotic range.
 
-    The order-of-accuracy test's evidence is the sequence of orders, so that is the default table and
-    the metric name sits over its own rate column. The error magnitudes, the cpp/py energy check and
-    the Newton residuals are what those orders were computed from rather than the evidence itself, so
-    they wait for `show_diagnostics`. The solve's `status` does not: a rate off an unconverged level
-    is not evidence of anything, so the guard stays in both tables.
+    The order-of-accuracy test's evidence is the sequence of orders in the reported norms, so that is
+    the default table and the metric name sits over its own rate column. The error magnitudes, the dU
+    and aeuh cross-check, the cpp/py energy check and the Newton residuals are what those orders were
+    computed from or against rather than the evidence itself, so they wait for `show_diagnostics`. The
+    solve's `status` does not: a rate off an unconverged level is not evidence of anything, so the
+    guard stays in both tables.
     """
+    metrics = METRICS if show_diagnostics else REPORTED
     header = f"{'elements':>12} {'h':>10}"
-    for name in METRICS:
+    for name in metrics:
         header += f" {name:>12} {'rate':>6}" if show_diagnostics else f" {name:>{RATE_COLUMN}}"
     if show_diagnostics:
         # cpp/py: SOFA's own potential energy against the Python quadrature; should read 1.
@@ -241,7 +251,7 @@ def print_table(history, labels, diagnostics, accepted, show_diagnostics):
 
     for index, (level, label, diagnostic) in enumerate(zip(history, labels, diagnostics)):
         row = f"{label:>12} {level['h']:>10.5f}"
-        for name in METRICS:
+        for name in metrics:
             order, reason = level["order"][name]
             # A discarded pair reads red whether it was discarded for a stated reason or simply fell
             # outside the settled run.
@@ -259,7 +269,12 @@ def print_table(history, labels, diagnostics, accepted, show_diagnostics):
                 row += f" {'':>4} {'':>8}"
             else:
                 row += f" {newton['iterations']:>4} {newton['reduction']:>8.1e}"
-        row += f" {newton['status'] if newton else 'no newton'}"
+        # The status is the last column, so it needs no padding; `no newton` takes no colour -- the
+        # deck has no Newton solve to pass or fail, which is neither acceptance nor rejection.
+        if newton is None:
+            row += " no newton"
+        else:
+            row += f" {paint(newton['status'], newton['status'] == 'ok')}"
         print(row)
 
 
@@ -267,21 +282,28 @@ def print_summary(summary, show_diagnostics):
     """Per metric: the order in the settled range, its spread there, and what was expected.
 
     Which levels the range covers is not restated here -- the green rates in the table above are it.
-    `show_diagnostics` only picks the column widths, so these rows stay under the metric they belong
-    to in either table.
+    `show_diagnostics` picks which metrics and which column widths, so these rows stay under the
+    metric they belong to in either table.
     """
-    rows = {"order p": [], "spread": [], "expected": []}
-    for name in METRICS:
-        settled = summary["metrics"][name]
-        rows["order p"].append(f"{settled['order']:.2f}" if settled else "not reached")
-        rows["spread"].append(f"{settled['spread']:.2f}" if settled else "--")
-        rows["expected"].append(f"{FORMAL_ORDER[name]:.1f}")
+    metrics = METRICS if show_diagnostics else REPORTED
+    settled = [summary["metrics"][name] for name in metrics]
+    rows = [
+        # The order row is the run's verdict, so it carries the table's colours on the same rule the
+        # rates do: green where the settling test produced an order, red where it never reached one.
+        # Not green for agreeing with `expected` -- that comparison is the reader's to make, and
+        # colouring it would need a tolerance on the answer the test is supposed to be measuring.
+        ("order p", [f"{s['order']:.2f}" if s else "not reached" for s in settled],
+         [s is not None for s in settled]),
+        ("spread", [f"{s['spread']:.2f}" if s else "--" for s in settled], None),
+        ("expected", [f"{FORMAL_ORDER[name]:.1f}" for name in metrics], None),
+    ]
 
     print()
-    for label, cells in rows.items():
+    for label, cells, coloured in rows:
         row = f"{label:>12} {'':>10}"
-        for cell in cells:
-            row += f" {cell:>12} {'':>6}" if show_diagnostics else f" {cell:>{RATE_COLUMN}}"
+        for index, cell in enumerate(cells):
+            padded = f"{cell:>12} {'':>6}" if show_diagnostics else f"{cell:>{RATE_COLUMN}}"
+            row += f" {padded if coloured is None else paint(padded, coloured[index])}"
         print(row)
 
     if summary["unconverged"]:
@@ -289,29 +311,27 @@ def print_summary(summary, show_diagnostics):
               f" -- the orders above are contaminated by algebraic error at those levels.")
 
 
-def print_overview(results):
+def print_overview(results, show_diagnostics):
     """One line per deck: the settled order per metric, `--` where none was reached.
 
     The per-deck tables above distinguish *why* a metric has no order -- floor, oscillation,
     divergence, never settled -- which this collapses to `--` for the sake of one line per deck.
     A deck that raised reads `error` instead, so a crash is never mistaken for a metric that simply
-    did not settle.
+    did not settle. The orders carry the same colours they do per deck.
     """
+    metrics = METRICS if show_diagnostics else REPORTED
     print()
     header = f"{'deck':<44}"
-    for name in METRICS:
+    for name in metrics:
         header += f" {name:>9}"
     print(header + f" {'solver':>9}")
 
     for name, summary in results:
         row = f"{name:<44}"
-        for metric in METRICS:
-            if summary is None:
-                cell = "error"
-            else:
-                settled = summary["metrics"][metric]
-                cell = f"{settled['order']:.2f}" if settled else "--"
-            row += f" {cell:>9}"
+        for metric in metrics:
+            settled = None if summary is None else summary["metrics"][metric]
+            cell = "error" if summary is None else f"{settled['order']:.2f}" if settled else "--"
+            row += f" {paint(f'{cell:>9}', settled is not None)}"
         # A settled order means nothing at a level where the solve did not converge, so the count of
         # such levels rides along on the same line rather than living only in the per-deck table.
         if summary is None:
@@ -319,10 +339,10 @@ def print_overview(results):
         else:
             unconverged = len(summary["unconverged"])
             solver_cell = "ok" if not unconverged else f"{unconverged} bad"
-        print(row + f" {solver_cell:>9}")
+        print(row + f" {paint(f'{solver_cell:>9}', solver_cell == 'ok')}")
 
     row = f"{'expected':<44}"
-    for metric in METRICS:
+    for metric in metrics:
         row += f" {FORMAL_ORDER[metric]:>9.1f}"
     print(row + f" {'ok':>9}")
 
@@ -339,7 +359,7 @@ def run_all(directory, show_diagnostics):
             clear_progress()            # it raised mid-sweep, so the bar still owns the line
             print(f"  failed: {type(error).__name__}: {error}")
             results.append((name, None))
-    print_overview(results)
+    print_overview(results, show_diagnostics)
 
 
 def run(deck_path, show_diagnostics):
@@ -361,7 +381,7 @@ def run(deck_path, show_diagnostics):
     for level, (elements, h) in enumerate(sweep, start=1):
         label = 'x'.join(str(count) for count in elements)
         labels.append(label)
-        print_progress(level, len(sweep), label)
+        print_progress(level, len(sweep), label, "sofa")
 
         # RegularGridTopology's `n` counts grid points, not cells: nodes = elements + 1 per axis,
         # and its spacing is extent/(n-1). Converting here keeps that the only place the two
@@ -373,6 +393,8 @@ def run(deck_path, show_diagnostics):
                  source_quadrature_degree=deck["sourceQuadratureDegree"]).build(root)
         Sofa.Simulation.init(root)
         Sofa.Simulation.animate(root, root.dt.value)
+
+        print_progress(level, len(sweep), label, "norms")
         beam = root.beam.Beam
         nodes = beam.dofs.rest_position.array()
         uh = beam.dofs.position.array() - nodes
