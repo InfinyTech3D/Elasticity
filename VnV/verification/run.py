@@ -16,35 +16,17 @@ import Sofa.Simulation
 
 from VnV.verification.registry import GEOMETRIES, SOLUTIONS
 from VnV.verification.scene import MMSScene
-from VnV.verification.fem import (MeshQuadrature, energy, energy_norm_error, exact_energy,
-                                  exact_h1_semi_norm, exact_l2_norm, h1_semi_error, l2_error,
-                                  orthogonality_defect)
+from VnV.verification.fem import MeshQuadrature
+from VnV.verification.metrics import (FORMAL_ORDER, METRICS as METRIC_SET, NOISE_FLOOR_RELATIVE,
+                                      Measurement)
 from VnV.sofa.conventions import CONTAINER, ELEMENT_CPP
 from VnV.sofa.scene import load_plugins
 
-# Rates to expect for P1: L2 -> 2, H1 -> 1, Enorm -> 1 (it is the material-weighted H1 semi-norm).
-# dU is quadratic in the error so it would be 2 under Galerkin orthogonality, but it also carries
-# the load consistency error a(e, u_h) -- which FEMSourceTerm's fixed quadrature rule makes O(h^2)
-# too, so dU measures a mixture of the two. aeuh is that defect, reported so the mixture is visible
-# rather than silent: it is only safe to read dU as the energy error while aeuh converges faster.
-METRICS = ("L2", "H1", "Enorm", "dU", "aeuh")
-
-# The norms are what the order-of-accuracy test is about; dU and aeuh exist to keep each other honest
-# -- dU only reads as the energy error while aeuh converges faster, and the pair has to satisfy
-# dU = 0.5 Enorm^2 + aeuh. That makes them a cross-check on the energy identity rather than a claim of
-# their own, so they are computed on every level but shown only with the diagnostics on.
-REPORTED = ("L2", "H1", "Enorm")
-
-# The order-of-accuracy test compares the observed order against the order above; the observed one
-# is only an estimate of it inside the asymptotic range.
-FORMAL_ORDER = {"L2": 2.0, "H1": 1.0, "Enorm": 1.0, "dU": 2.0, "aeuh": 2.0}
-
-# A metric stops measuring the discretization and starts measuring its contaminants -- round-off,
-# the norm quadrature, the linear solve -- once it drops to their level. The floor is this fraction
-# of a reference magnitude of the metric's own dimension (see `scales` below), so one number serves
-# all five. It catches round-off; it does not catch a loose solver tolerance, which sits far above
-# it and needs a tolerance-tightening run to expose.
-NOISE_FLOOR_RELATIVE = 1e-9
+# Metric names, in the metric set's own order -- the column order of every table and the key order of
+# every record. The tables and the record still index by name; they take the metric objects directly
+# once the sweep is an object of its own.
+METRICS = tuple(metric.name for metric in METRIC_SET)
+REPORTED = tuple(metric.name for metric in METRIC_SET if metric.reported)
 
 GREEN, RED, RESET = "\033[32m", "\033[31m", "\033[0m"
 
@@ -533,64 +515,22 @@ def run(deck_path, output):
 
         # The mapping is shared by every norm below rather than rebuilt inside each of them.
         quadrature = MeshQuadrature(nodes, node_indices, element_name, degree)
-        u_ex, grad_u_ex = solution.u, solution.grad_u
+        # The energy comes off the force field itself rather than Node.computeEnergy(), whose subtree
+        # sum also picks up the point-load ConstantForceField that stands in for a traction in 1D.
+        measurement = Measurement(quadrature, uh, solution, beam.FEM.getPotentialEnergy())
 
-        psi = solution.energy_density
-        u_energy = energy(quadrature, uh, psi)
+        current = {metric.name: metric.measure(measurement) for metric in METRIC_SET}
+        floors = {metric.name: NOISE_FLOOR_RELATIVE * metric.scale(measurement)
+                  for metric in METRIC_SET}
 
-        # The exact energy is integrated in its own right rather than derived from the energy norm.
-        # Writing e = u_h - u for the error field, G = grad u, G_h = grad u_h, and C for the
-        # elasticity tensor, psi is a quadratic form, so the energy density of the difference is not
-        # the difference of the energy densities:
-        #
-        #     psi(G_h) - psi(G) = psi(G_h - G) + (G_h - G) : C : G
-        #
-        # The trailing cross term is linear in the error and vanishes nowhere pointwise. It cancels
-        # only after integrating over the domain, and only if Galerkin orthogonality a(e, u_h) = 0
-        # holds, which is what reduces the energy difference to the energy norm of the error:
-        #
-        #     U_h - U = -0.5 ||e||_E^2 + a(e, u_h)
-        #
-        # Orthogonality needs u_h to satisfy the continuous variational problem against its own
-        # space, which needs the load functional integrated exactly. FEMSourceTerm integrates it
-        # with a fixed rule, so a(e, u_h) = L_h(u_h) - L(u_h) is nonzero and of the same order as
-        # the energy error, leaving dU a mixture of the two. Deriving dU from Enorm would assume
-        # the defect away; integrating U separately is what lets aeuh measure it.
-        u_energy_exact = exact_energy(quadrature, grad_u_ex, psi)
-
-        current = {
-            "L2":    l2_error(quadrature, uh, u_ex),
-            "H1":    h1_semi_error(quadrature, uh, grad_u_ex),
-            "Enorm": energy_norm_error(quadrature, uh, grad_u_ex, psi),
-            "dU":    abs(u_energy_exact - u_energy),
-            "aeuh":  abs(orthogonality_defect(quadrature, uh, grad_u_ex, solution.constitutive)),
-        }
-
-        # Each metric needs a reference magnitude of its own dimension for the relative floor to
-        # mean anything: the norms scale with the field, the energy metrics with the energy. The
-        # exact norms are integrated on this mesh and rule, so the floor and the error it gates are
-        # commensurate by construction.
-        scales = {
-            "L2":    exact_l2_norm(quadrature, u_ex),
-            "H1":    exact_h1_semi_norm(quadrature, grad_u_ex),
-            "Enorm": np.sqrt(2.0 * u_energy_exact),
-            "dU":    u_energy_exact,
-            "aeuh":  u_energy_exact,
-        }
-
-        # Read from the force field itself rather than Node.computeEnergy(), whose subtree sum also
-        # picks up the point-load ConstantForceField that stands in for a traction in 1D.
-        cpp_energy = beam.FEM.getPotentialEnergy()
-
-        history.append({"h": h, "value": current,
-                        "floor": {name: NOISE_FLOOR_RELATIVE * scales[name] for name in METRICS}})
+        history.append({"h": h, "value": current, "floor": floors})
         history[-1]["order"] = {name: observed_order(history, name) for name in METRICS}
 
         newton = newton_diagnostics(getattr(beam, 'newton', None))
         solver.append(newton['status'] if newton else None)
         # The element count the mapping actually produced, since the deck states cells: one row of
         # node_indices per element, so 6x the cells for tetrahedra and 2x for triangles.
-        diagnostics.append({"cpp": cpp_energy / u_energy, "newton": newton,
+        diagnostics.append({"cpp": measurement.cpp_ratio, "newton": newton,
                             "elements": len(node_indices), "pcg": pcg})
 
         Sofa.Simulation.unload(root)
