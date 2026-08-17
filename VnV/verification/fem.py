@@ -65,12 +65,15 @@ def energy(quadrature, gradients, energy_density):
     return quadrature.integrate(energy_density(gradients))
 
 
-def orthogonality_defect(quadrature, grad_h, grad_error, constitutive):
+def orthogonality_defect(quadrature, grad_h, grad_error, grad_exact, tangent):
     """a(e, u_h) with e = u_h - u: the Galerkin orthogonality defect.
 
     Zero when u_h solves the continuous variational problem against its own space, which needs the
     load functional integrated exactly. It is what separates |U - U_h| from 0.5 ||e||_E^2.
+
+    The tangent is taken at the exact solution, which is where a nonlinear material would have to
+    linearize; for a linear one it is constant and the argument is ignored. Neither tensor needs
+    symmetrizing first: the tangent already carries the symmetric part of what it is applied to, and
+    its result is symmetric, so contracting against the full gradient drops nothing.
     """
-    strain_e = 0.5 * (grad_error + np.swapaxes(grad_error, -2, -1))
-    strain_h = 0.5 * (grad_h + np.swapaxes(grad_h, -2, -1))
-    return quadrature.integrate(np.sum(constitutive(strain_e) * strain_h, axis=(-2, -1)))
+    return quadrature.integrate(np.sum(tangent(grad_exact, grad_error) * grad_h, axis=(-2, -1)))

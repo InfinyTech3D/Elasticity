@@ -144,8 +144,8 @@ class OrthogonalityDefect(Metric):
     reported = False
 
     def measure(self, m):
-        return abs(orthogonality_defect(m.quadrature, m.grad_h, m.grad_error,
-                                        m.solution.constitutive))
+        return abs(orthogonality_defect(m.quadrature, m.grad_h, m.grad_error, m.grad_exact,
+                                        m.solution.tangent))
 
     def scale(self, m):
         return m.energy_exact

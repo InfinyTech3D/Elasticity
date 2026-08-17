@@ -10,8 +10,11 @@ to this module rather than to the runner and the scene at once.
 import json
 import pathlib
 
+import Sofa.SofaDeformable
+
+from VnV.verification.manufactured import ManufacturedSolution
 from VnV.verification.metrics import METRICS
-from VnV.verification.registry import GEOMETRIES, SOLUTIONS
+from VnV.verification.registry import FIELDS, GEOMETRIES, MATERIALS
 
 # Every key a deck must state. Strict in both directions: a missing key is an omission and an unknown
 # key is a typo, and neither should be discovered halfway through a sweep.
@@ -20,6 +23,31 @@ REQUIRED = {"geometry", "element", "function", "amplitude", "material", "forceFi
             "asymptoticTolerance", "expect", "expectTolerance", "noiseFloorRelative"}
 
 MESH_KEYS = {"cells", "levels", "refinementRatio"}
+
+
+def _toLameParameters1D(youngModulus, poissonRatio):
+    """(mu, lambda) at d = 1, where lambda + 2 mu = E collapses Hooke to sigma = E eps."""
+    return 0.5 * youngModulus, 0.0
+
+
+# Spatial dimension -> SOFA's own Young/Poisson -> (mu, lambda) converter. Going through the bindings
+# keeps the manufactured source term on exactly the constitutive branch the solver takes (plane stress
+# at 2, plane strain at 3). d = 1 is ours: there is no SOFA branch to defer to.
+_LAME = {1: _toLameParameters1D,
+         2: Sofa.SofaDeformable.toLameParameters2D,
+         3: Sofa.SofaDeformable.toLameParameters3D}
+
+
+def _material(spec, spatial_dimensions):
+    """The deck's material, built from the parameters it states.
+
+    The conversion sits here rather than on the material because it is where SOFA is the authority:
+    the symbolic laws take numbers and stay independent of a build. A material parameterized some
+    other way than by Young and Poisson converts its own way, which is a branch for this function
+    rather than a second constitutive law.
+    """
+    return MATERIALS[spec["type"]](*_LAME[spatial_dimensions](spec["youngModulus"],
+                                                             spec["poissonRatio"]))
 
 
 def _validate(name, spec):
@@ -44,6 +72,14 @@ def _validate(name, spec):
 
     if "mesh" in spec and set(spec["mesh"]) != MESH_KEYS:
         problems.append(f"mesh must state exactly {sorted(MESH_KEYS)}, got {sorted(spec['mesh'])}")
+
+    # The material is named like everything else rather than assumed: which constitutive law a study
+    # verified against is part of what it verified, not a default the code picks.
+    material = spec.get("material", {})
+    if "type" not in material:
+        problems.append(f"material must state a type, one of {sorted(MATERIALS)}")
+    elif material["type"] not in MATERIALS:
+        problems.append(f"unknown material {material['type']!r}, expected one of {sorted(MATERIALS)}")
 
     # One expectation per metric, so adding a metric cannot leave the decks silently unjudged: the
     # study looks `expect` up by metric name, and a name it cannot find is a KeyError mid-sweep.
@@ -70,8 +106,12 @@ class Deck:
         # Keyed on the geometry's topological dimension, not the space it is embedded in: the same
         # field name means the same field in 1D, 2D and 3D. Still handed the raw spec -- dropping that
         # coupling is its own piece of work, not this one.
-        self.solution = SOLUTIONS[(self.geometry.dim, spec["function"])](
+        field = FIELDS[(self.geometry.dim, spec["function"])](
             spec, self.geometry.spatial_dimensions)
+        # Field and material are independent axes of a study, so the deck names one of each and this
+        # is where they are paired.
+        self.solution = ManufacturedSolution(
+            field, _material(spec["material"], self.geometry.spatial_dimensions))
 
         self.element = spec["element"]
         self.material = spec["material"]
