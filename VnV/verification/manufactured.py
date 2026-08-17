@@ -47,9 +47,13 @@ class ManufacturedSolution(ABC):
         self.mu, self.lam = lame(self.material, dimensions)
 
         self.coordinates = sp.Matrix(_COORDINATES[:dimensions])
+        # A field states its own components and the embedding pads the rest with zeros: an embedded
+        # manufactured field has to be constant off-manifold anyway.
+        components = list(self.displacement(self.coordinates))
+        components += [0] * (dimensions - len(components))
         # Kept symbolic as well as compiled: `equation` is derived from this, so what a figure or a
         # write-up states is the field that was solved rather than a second, hand-written copy of it.
-        self.displacement_expression = displacement = sp.Matrix(self.displacement(self.coordinates))
+        self.displacement_expression = displacement = sp.Matrix(components)
         gradient = displacement.jacobian(self.coordinates)
         stress = self.constitutive_law(self.strain(gradient))
         source = -sp.Matrix([sum(sp.diff(stress[i, j], self.coordinates[j])
@@ -160,18 +164,10 @@ class ManufacturedSolution(ABC):
 
         return constitutive, energy_density
 
-    def _pad_mask(self, mask):
-        """Extend a mask to the embedding space, fixing the out-of-plane components."""
-        return list(mask) + [1] * (self.spatial_dimensions - len(mask))
-
-    def _embed(self, in_plane):
-        """Place an in-plane displacement in the embedding space, padded with zeros."""
-        return list(in_plane) + [0] * (self.spatial_dimensions - len(in_plane))
-
 
 # --- The fields themselves, one class per deck "function"; registry.py keys them by (dim, name). ---
 
-# In-plane direction masks; the embedding space extends them (see prescribe_displacement_on).
+# In-plane direction masks; the scene pads them to the embedding space (see MMSScene.apply_bcs).
 _IN_PLANE_MASKS = {"left": [1, 0], "right": [1, 0], "bottom": [0, 1], "top": [0, 1]}
 
 
@@ -198,36 +194,27 @@ class Trigonometric1D(ManufacturedSolution):
 class Quadratic2D(ManufacturedSolution):
     """u = A[x^2, y^2]: body force constant and traction linear, so both are nodally exact."""
 
+    # Each face prescribes only the component that is constant on it -- u_x on the x-faces is
+    # A x^2 at fixed x -- so the nodal values carry the Dirichlet data without error either.
+    prescribe_displacement_on = _IN_PLANE_MASKS
     traction_on = ("left", "right", "bottom", "top")
-
-    @property
-    def prescribe_displacement_on(self):
-        # Each face prescribes only the component that is constant on it -- u_x on the x-faces is
-        # A x^2 at fixed x -- so the nodal values carry the Dirichlet data without error either.
-        return {region: self._pad_mask(mask) for region, mask in _IN_PLANE_MASKS.items()}
 
     def displacement(self, coordinates):
         x, y = coordinates[0], coordinates[1]
-        return self._embed([self.amplitude * x**2, self.amplitude * y**2])
+        return [self.amplitude * x**2, self.amplitude * y**2]
 
 
 class Trigonometric2D(ManufacturedSolution):
     """u = A[sin(kx x)cos(ky y), cos(kx x)sin(ky y)], kx=2pi/L, ky=2pi/W: ux fixed on x-faces, uy on y-faces, traction elsewhere."""
 
+    prescribe_displacement_on = _IN_PLANE_MASKS
     traction_on = ("left", "right", "bottom", "top")
-
-    @property
-    def prescribe_displacement_on(self):
-        # Fixing the out-of-plane components is what keeps the stiffness matrix regular: their
-        # block is decoupled from the in-plane one and carries no source, so it has a rigid
-        # translation for a null mode -- and u = 0 there, so the constraint costs no physics.
-        return {region: self._pad_mask(mask) for region, mask in _IN_PLANE_MASKS.items()}
 
     def displacement(self, coordinates):
         kx, ky = self.wavenumber("length"), self.wavenumber("width")
         x, y = coordinates[0], coordinates[1]
-        return self._embed([self.amplitude * sp.sin(kx * x) * sp.cos(ky * y),
-                            self.amplitude * sp.cos(kx * x) * sp.sin(ky * y)])
+        return [self.amplitude * sp.sin(kx * x) * sp.cos(ky * y),
+                self.amplitude * sp.cos(kx * x) * sp.sin(ky * y)]
 
 
 class Trigonometric3D(ManufacturedSolution):

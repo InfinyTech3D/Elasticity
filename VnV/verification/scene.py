@@ -25,7 +25,10 @@ class MMSScene(Scene):
         # Prescribed displacement u_ex per region+direction mask: one partial clamp per mask, filled post-init.
         by_mask = {}
         for region, mask in mms.prescribe_displacement_on.items():
-            by_mask.setdefault(tuple(mask), []).append(region)
+            # A solution states its mask in its own dimension; off-manifold components are not the
+            # field's business and are handled once by the out-of-plane clamp below.
+            padded = tuple(mask) + (0,) * (g.spatial_dimensions - len(mask))
+            by_mask.setdefault(padded, []).append(region)
         groups = []
         for mask, regions in by_mask.items():
             constraint = node.addObject('PartialFixedProjectiveConstraint',
@@ -34,6 +37,14 @@ class MMSScene(Scene):
             groups.append((constraint, regions, mask))
         node.addObject(RegionClamp(geometry=g, dofs=node.dofs, groups=groups,
                                    displacement=mms.u, name='clampCtrl'))
+
+        # An embedded mesh has an out-of-plane null mode: that block is decoupled from the in-plane one
+        # and carries no source, so it has a rigid translation for a null mode. Fixing it everywhere is
+        # what keeps the stiffness matrix regular -- and u = 0 there, so the constraint costs no physics.
+        if g.dim < g.spatial_dimensions:
+            node.addObject('PartialFixedProjectiveConstraint', name='outOfPlane', template=VEC,
+                           fixAll=True,
+                           fixedDirections=[0] * g.dim + [1] * (g.spatial_dimensions - g.dim))
 
         # Body force from the source: integrated by SOFA's FEMSourceTerm component (SOFA quadrature).
         bf = node.addObject('FEMSourceTerm', name='bodyForce',
