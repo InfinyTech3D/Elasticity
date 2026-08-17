@@ -1,8 +1,0 @@
-{
-  "beam3d_circle_tet": {
-  "length": 1.0,
-  "radius": 0.1,
-  "mesh_size": 0.01,
-  "meshfile": "beam3d_circular_tet.msh"
-  }
-}
