@@ -1,36 +1,30 @@
 """SOFA prefab: a dimension/element-agnostic elastic beam."""
 
-import Sofa
-import Sofa.Core
-
+from .base import ScenePrefab
 from ..conventions import VEC_BY_SPATIAL_DIM, CONTAINER, MAPPING, ELEMENT_CPP
 
 
 def validate_parameters(config):
     """Required ElasticBeam parameters."""
-    required = ['extents', 'resolution', 'spatialDimensions', 'element', 'youngModulus',
-                'poissonRatio', 'forceFieldName']
+    required = ['extents', 'resolution', 'spatialDimensions', 'element']
     missing = [p for p in required if p not in config]
     if missing:
         raise ValueError(f"ElasticBeam: missing required parameters {missing}")
 
 
-class ElasticBeam(Sofa.Prefab):
-    """SOFA elastic beam: RegularGridTopology + dofs + FEM force field."""
+class ElasticBeam(ScenePrefab):
+    """SOFA elastic beam: RegularGridTopology + dofs, then the components the deck states."""
 
     prefabParameters = [
         {'name': 'extents',        'type': 'Vec3d',  'help': 'box max corner [Lx, Ly, Lz]'},
         {'name': 'resolution',     'type': 'Vec3d',  'help': 'nodes per axis [nx, ny, nz]'},
         {'name': 'spatialDimensions', 'type': 'int', 'help': 'dimension of the embedding space'},
         {'name': 'element',        'type': 'string', 'help': 'element kind (edge/tri/quad/tet/hexa)'},
-        {'name': 'youngModulus',   'type': 'double', 'help': "Young's modulus"},
-        {'name': 'poissonRatio',   'type': 'double', 'help': "Poisson's ratio"},
-        {'name': 'forceFieldName', 'type': 'string', 'help': 'FEM force field component name'},
     ]
 
     def __init__(self, *args, **kwargs):
         validate_parameters(kwargs)
-        Sofa.Prefab.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def init(self):
         VecType = VEC_BY_SPATIAL_DIM[self.spatialDimensions.value]
@@ -59,9 +53,7 @@ class ElasticBeam(Sofa.Prefab):
                 beam.addObject(container.replace('Container', 'Modifier'))
             # DOFs
             beam.addObject('MechanicalObject', name='dofs', template=VecType)
-            # FEM
-            paramsFEM = dict(youngModulus=self.youngModulus.value,
-                             poissonRatio=self.poissonRatio.value)
-            beam.addObject(self.forceFieldName.value, name='FEM',
-                           template=f"{VecType},{ELEMENT_CPP[element]}",
-                           topology='@topology', **paramsFEM)
+            # The component under test and the solve, both stated by the deck (see ScenePrefab).
+            self.add_force_field(beam, self.spec['forceField'], self.spec['material'],
+                                 template=f"{VecType},{ELEMENT_CPP[element]}")
+            self.add_solvers(beam, self.spec['solvers'])

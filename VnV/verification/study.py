@@ -68,6 +68,7 @@ class ConvergenceStudy:
     def __init__(self, deck, metrics):
         self.name = deck.name
         self.element = deck.element
+        self.force_field = deck.force_field
         self.equation = deck.equation
         self.metrics = list(metrics)
         self.reported = [metric for metric in self.metrics if metric.reported]
@@ -222,6 +223,10 @@ class ConvergenceStudy:
         return {"deck": self.name,
                 # The element the deck ran, which the convergence figure turns into a marker shape.
                 "element": self.element,
+                # The component under test and how the deck configured it. It used to be a constant
+                # across every deck; now it is a variable of the study, so comparing one formulation
+                # against another is two records differing in a stated field rather than two names.
+                "forceField": self.force_field,
                 # The manufactured field in math form, which titles the figures and can be quoted in a
                 # write-up: it comes off the solution itself, so it names the problem that was solved.
                 "equation": self.equation,

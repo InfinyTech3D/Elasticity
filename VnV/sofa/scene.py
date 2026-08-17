@@ -2,7 +2,6 @@
 
 import SofaRuntime
 
-from .solvers import add_solvers
 from .prefabs.beam import ElasticBeam
 
 
@@ -54,15 +53,15 @@ class Scene:
         root.addObject('RequiredPlugin', pluginName=PLUGINS)
         root.addObject('DefaultAnimationLoop')
         resolution = [self.resolution[i] if i < len(self.resolution) else 1 for i in range(3)]
-        params = dict(name='beam',
-                      extents=self.geometry.extents,
-                      resolution=resolution,
-                      spatialDimensions=self.geometry.spatial_dimensions,
-                      element=self.element,
-                      youngModulus=self.material['youngModulus'],
-                      poissonRatio=self.material['poissonRatio'],
-                      forceFieldName=self.force_field)
-        beam = root.addChild(ElasticBeam(**params))
+        # The beam is complete when it is added: the deck blocks it needs go in with it, since a
+        # prefab runs its own init() from inside its constructor.
+        beam = root.addChild(ElasticBeam(name='beam',
+                                         extents=self.geometry.extents,
+                                         resolution=resolution,
+                                         spatialDimensions=self.geometry.spatial_dimensions,
+                                         element=self.element,
+                                         spec={'material': self.material,
+                                               'forceField': self.force_field,
+                                               'solvers': self.solvers}))
         self.apply_bcs(beam)
-        add_solvers(beam.beam, self.solvers)
         return beam

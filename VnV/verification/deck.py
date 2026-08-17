@@ -89,6 +89,27 @@ def _validate(name, spec):
     elif material["type"] not in MATERIALS:
         problems.append(f"unknown material {material['type']!r}, expected one of {sorted(MATERIALS)}")
 
+    # The component under test gets the same contract as `solvers`: a type plus whatever Data the
+    # deck wants to set, so unknown keys are that component's business rather than this module's.
+    # dict rather than truthiness: a bare component name is the pre-passthrough spelling, and `in`
+    # on a string is a substring test, so it would pass the type check and fail later as a TypeError.
+    force_field = spec.get("forceField")
+    if not isinstance(force_field, dict):
+        problems.append(f"forceField must be an object stating a type, got {force_field!r}")
+        force_field = {}
+    elif "type" not in force_field:
+        problems.append("forceField must state a type")
+    # `name` is what the runner reads the potential energy off, and `template` and `topology` follow
+    # from `element` and the mesh -- a deck stating either could contradict what it already stated.
+    owned = {"name", "template", "topology"} & set(force_field)
+    if owned:
+        problems.append(f"forceField must not state {sorted(owned)}: the prefab sets them")
+    # One home for the constitutive parameters: the manufactured source reads `material` too, and two
+    # sources is how a source term and the component it verifies drift apart silently.
+    clash = (set(force_field) & set(material)) - {"type"}
+    if clash:
+        problems.append(f"forceField and material both state {sorted(clash)}: state them in material")
+
     # One expectation per metric, so adding a metric cannot leave the decks silently unjudged: the
     # study looks `expect` up by metric name, and a name it cannot find is a KeyError mid-sweep.
     names = {metric.name for metric in METRICS}
