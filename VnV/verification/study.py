@@ -56,11 +56,11 @@ class ConvergenceStudy:
     """A refinement sweep: levels in, an order of accuracy per metric out.
 
     `metrics` is the metric objects the runner measured with -- only their `name` and `reported` are
-    read here, so this module stays independent of how a metric is computed. `expected` is the formal
-    order per metric name, carried for the record and for the reader to compare against.
+    read here, so this module stays independent of how a metric is computed. `expected` is the order
+    per metric name the deck states, and `expect_tolerance` how far the settled order may sit from it.
     """
 
-    def __init__(self, deck, element, equation, metrics, tolerance, expected):
+    def __init__(self, deck, element, equation, metrics, tolerance, expected, expect_tolerance):
         self.deck = deck
         self.element = element
         self.equation = equation
@@ -68,6 +68,7 @@ class ConvergenceStudy:
         self.reported = [metric for metric in self.metrics if metric.reported]
         self.tolerance = tolerance
         self.expected = expected
+        self.expect_tolerance = expect_tolerance
         self.levels = []
 
     def add(self, level):
@@ -141,6 +142,36 @@ class ConvergenceStudy:
         """The level indices whose rate the settling test kept, as a set for the tables to test."""
         return {index for index, _ in self.settled(metric)}
 
+    def passed(self, metric):
+        """Whether the settled order is the one the deck expects, or None if this metric is not judged.
+
+        This is where the run stops measuring and starts judging, and the two are kept apart on
+        purpose: `settled` above chooses its range by comparing consecutive orders to each other and
+        never looks at `expected`, so the range is picked independently of the answer being checked.
+        Only afterwards is the order it produced held against the deck's number. Selecting the range by
+        closeness to `expected` would be circular; judging an independently chosen range is not.
+
+        Only the reported metrics are judged. dU and aeuh are the energy cross-check, and aeuh reaches
+        no order at all where the load is exactly representable -- the quadratic fields, where
+        orthogonality holds so the defect sits at round-off and grows under refinement. Holding it to
+        an expected order would fail those decks for behaving exactly as they should.
+        """
+        if metric not in {reported.name for reported in self.reported}:
+            return None
+        verdict = self.verdict(metric)
+        # bool(): the order comes out of numpy, and a numpy bool is not JSON-serializable -- it would
+        # reach the record as 1.0 through `default=float` rather than as true.
+        return bool(verdict is not None
+                    and abs(verdict.order - self.expected[metric]) <= self.expect_tolerance)
+
+    def ok(self):
+        """Every judged metric settled where the deck said it would, on a sweep whose solves converged.
+
+        The solve is part of the verdict rather than a footnote to it: an order that looks settled over
+        levels whose Newton solve never converged is not evidence of anything.
+        """
+        return not self.unconverged() and all(self.passed(metric.name) for metric in self.reported)
+
     def unconverged(self):
         """Labels of the levels whose solve did not converge.
 
@@ -193,5 +224,10 @@ class ConvergenceStudy:
                 # code: dU and aeuh are the energy cross-check, recorded but not a convergence claim.
                 "reported": [metric.name for metric in self.reported],
                 "expected": {metric.name: self.expected[metric.name] for metric in self.metrics},
+                "expectTolerance": self.expect_tolerance,
+                # The judgement, stored rather than left to be recomputed: null where a metric is not
+                # judged. `ok` is the deck's verdict and what the runner's exit code is taken from.
+                "passed": {metric.name: self.passed(metric.name) for metric in self.metrics},
+                "ok": self.ok(),
                 "summary": self.summary(),
                 "levels": levels}

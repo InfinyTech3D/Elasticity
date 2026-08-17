@@ -233,13 +233,17 @@ def print_summary(study, show_diagnostics):
     """
     metrics = study.metrics if show_diagnostics else study.reported
     settled = [study.verdict(metric.name) for metric in metrics]
+    judgements = [study.passed(metric.name) for metric in metrics]
     rows = [
-        # The order row is the run's verdict, so it carries the table's colours on the same rule the
-        # rates do: green where the settling test produced an order, red where it never reached one.
-        # Not green for agreeing with `expected` -- that comparison is the reader's to make, and
-        # colouring it would need a tolerance on the answer the test is supposed to be measuring.
+        # The order row is the run's verdict, so it carries the table's colours: green where the
+        # settled order is the one the deck expects, red where it is not or where none was reached.
+        # The deck states the tolerance that comparison needs, which is what makes this a verdict
+        # rather than the reader's own judgement -- and the settling test still never looks at
+        # `expected`, so the range was chosen independently of the answer it is now held against.
+        # dU and aeuh are not judged, so they keep the older rule: green wherever an order was reached.
         ("order p", [f"{s.order:.2f}" if s else "not reached" for s in settled],
-         [s is not None for s in settled]),
+         [reached is not None if judgement is None else judgement
+          for judgement, reached in zip(judgements, settled)]),
         ("spread", [f"{s.spread:.2f}" if s else "--" for s in settled], None),
         ("expected", [f"{study.expected[metric.name]:.1f}" for metric in metrics], None),
     ]
@@ -281,8 +285,11 @@ def print_overview(results, show_diagnostics):
         row = f"{name:<44}"
         for metric in metrics:
             settled = None if study is None else study.verdict(metric.name)
+            judgement = None if study is None else study.passed(metric.name)
             cell = "error" if study is None else f"{settled.order:.2f}" if settled else "--"
-            row += f" {paint(f'{cell:>9}', settled is not None)}"
+            # A judged metric takes the verdict's colour; dU and aeuh only say whether an order was
+            # reached at all, and a deck that raised reads red on every column.
+            row += f" {paint(f'{cell:>9}', settled is not None if judgement is None else judgement)}"
         # A settled order means nothing at a level where the solve did not converge, so the count of
         # such levels rides along on the same line rather than living only in the per-deck table.
         if study is None:
@@ -330,7 +337,11 @@ def finish_deck(study, output):
 
 
 def run_all(directory, output):
-    """Every deck in the tree, each with its own table, then one line per deck."""
+    """Every deck in the tree, each with its own table, then one line per deck.
+
+    Returns [(name, study)] with a None study where the deck raised, so the caller can take an exit
+    code off the sweep as a whole.
+    """
     results = []
     for path in sorted(directory.glob("*D/*.json")):
         name = f"{path.parent.name}/{path.stem}"
@@ -342,6 +353,7 @@ def run_all(directory, output):
             print(f"  failed: {type(error).__name__}: {error}")
             results.append((name, None))
     print_overview(results, output["diagnostics"])
+    return results
 
 
 def run(deck_path, output):
@@ -361,7 +373,8 @@ def run(deck_path, output):
 
     sweep = refinement_sweep(deck["mesh"], geometry.extents)
     study = ConvergenceStudy(deck_name, element, solution.equation, METRICS,
-                             deck["asymptoticTolerance"], deck["expect"])
+                             deck["asymptoticTolerance"], deck["expect"],
+                             deck["expectTolerance"])
     opened = False                      # the deck's window, raised on the first level that has curves
     for level, (cells, h) in enumerate(sweep, start=1):
         label = 'x'.join(str(count) for count in cells)
@@ -460,12 +473,19 @@ if __name__ == "__main__":
     load_plugins()
     try:
         if arguments[0] == "--all":
-            run_all(pathlib.Path(__file__).parent, output)
+            failed = [name for name, study in run_all(pathlib.Path(__file__).parent, output)
+                      if study is None or not study.ok()]
         else:
-            run(arguments[0], output)
+            study = run(arguments[0], output)
+            failed = [] if study.ok() else [study.deck]
     finally:
         # Even if the sweep raised: the windows drawn so far are worth keeping, and the pipe has to be
         # closed for the child to know nothing more is coming. It is never waited on -- that is what
         # frees the terminal while the figures stay up.
         if output["live"] is not None:
             output["live"].detach()
+
+    # Non-zero so a sweep can gate something. The tables above already say which metric fell short and
+    # why, so this only names the decks.
+    if failed:
+        sys.exit(f"\nfailed: {', '.join(failed)}")
