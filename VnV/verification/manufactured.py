@@ -66,10 +66,15 @@ class ManufacturedSolution:
         dimensions = spatial_dimensions
 
         self.coordinates = sp.Matrix(_COORDINATES[:dimensions])
-        # A field states its own components and the embedding pads the rest with zeros: an embedded
-        # manufactured field has to be constant off-manifold anyway.
-        components = list(field.displacement(self.coordinates))
-        components += [0] * (dimensions - len(components))
+        # A field is handed its own coordinates and states its own components, so it can neither vary
+        # nor displace off-manifold, and the embedding pads the rest with zeros. An extra component is
+        # rejected rather than padded over: the scene clamps the off-manifold directions to zero, so
+        # the study would go on to measure a field the solve is not solving.
+        components = list(field.displacement(_COORDINATES[:field.dim]))
+        if len(components) != field.dim:
+            raise ValueError(f"{type(field).__name__}: displacement must state {field.dim} "
+                             f"components, one per dimension of the field, got {len(components)}")
+        components += [0] * (dimensions - field.dim)
         # Kept symbolic as well as compiled: `equation` is derived from this, so what a figure or a
         # write-up states is the field that was solved rather than a second, hand-written copy of it.
         self.displacement_expression = displacement = sp.Matrix(components)
