@@ -56,19 +56,24 @@ class ConvergenceStudy:
     """A refinement sweep: levels in, an order of accuracy per metric out.
 
     `metrics` is the metric objects the runner measured with -- only their `name` and `reported` are
-    read here, so this module stays independent of how a metric is computed. `expected` is the order
-    per metric name the deck states, and `expect_tolerance` how far the settled order may sit from it.
+    read here, so this module stays independent of how a metric is computed. Everything else comes off
+    the deck, and is copied out of it here rather than reached for later: the constructor is the one
+    place that touches the deck's shape, so the rest of the class -- and the record it writes -- reads
+    plain attributes and would survive a study built from something other than a deck.
+
+    `expected` is the order per metric name the deck states, and `expect_tolerance` how far the settled
+    order may sit from it before the metric counts as failed.
     """
 
-    def __init__(self, deck, element, equation, metrics, tolerance, expected, expect_tolerance):
-        self.deck = deck
-        self.element = element
-        self.equation = equation
+    def __init__(self, deck, metrics):
+        self.name = deck.name
+        self.element = deck.element
+        self.equation = deck.equation
         self.metrics = list(metrics)
         self.reported = [metric for metric in self.metrics if metric.reported]
-        self.tolerance = tolerance
-        self.expected = expected
-        self.expect_tolerance = expect_tolerance
+        self.tolerance = deck.asymptotic_tolerance
+        self.expected = deck.expect
+        self.expect_tolerance = deck.expect_tolerance
         self.levels = []
 
     def add(self, level):
@@ -214,7 +219,7 @@ class ConvergenceStudy:
                            "cpp": level.cpp_ratio, "metrics": metrics,
                            "newton": level.newton, "pcg": level.pcg})
 
-        return {"deck": self.deck,
+        return {"deck": self.name,
                 # The element the deck ran, which the convergence figure turns into a marker shape.
                 "element": self.element,
                 # The manufactured field in math form, which titles the figures and can be quoted in a

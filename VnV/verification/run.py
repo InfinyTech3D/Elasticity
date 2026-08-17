@@ -14,7 +14,7 @@ import Sofa
 import Sofa.Core
 import Sofa.Simulation
 
-from VnV.verification.registry import GEOMETRIES, SOLUTIONS
+from VnV.verification.deck import Deck
 from VnV.verification.scene import MMSScene
 from VnV.verification.fem import MeshQuadrature
 from VnV.verification.metrics import METRICS, REPORTED, Measurement
@@ -92,30 +92,6 @@ def pcg_diagnostics(linear):
     return {"curves": curves, "tolerance": float(tolerance.value) if tolerance else None}
 
 
-def refinement_sweep(mesh, extents):
-    """Grid cells per axis and mesh spacing per level, coarsest first.
-
-    A deck states the coarsest cell count and how many times to refine it, so refinement at a fixed
-    ratio on every axis is structural: there is no per-level list for a hand-written value to drift
-    in, and the constant ratio the settling test assumes is the ratio the meshes have.
-
-    Cells, not elements: what the deck controls is the grid `RegularGridTopology` lays down, and the
-    topology mappings then split each cell -- 6 tetrahedra per hexahedron, 2 triangles per quad. Those
-    elements are larger than the cell (the tetrahedra span its body diagonal), but by a factor fixed
-    across levels, so it cancels in the ratio the pairwise order divides by and `h` stays the honest
-    mesh parameter for a rate.
-    """
-    ratio = mesh["refinementRatio"]
-    sweep = []
-    for level in range(mesh["levels"]):
-        cells = [count * ratio ** level for count in mesh["cells"]]
-        # The classical mesh parameter is the largest cell diameter, which the coarsest direction
-        # sets; extents carries zeros for inactive axes, so zip against `cells` drops them.
-        spacing = max(extent / count for extent, count in zip(extents, cells))
-        sweep.append((cells, spacing))
-    return sweep
-
-
 def plots_module():
     """matplotlib stays optional: a run that only prints tables must not need it installed."""
     from VnV.verification import plots
@@ -174,24 +150,13 @@ def run_all(directory, output):
 
 
 def run(deck_path, output):
-    with open(deck_path) as f:
-        deck = json.load(f)
+    # Parsed and checked before anything is built, so a mistyped key costs a message rather than a
+    # sweep that dies once the first mesh has already been solved.
+    deck = Deck.load(deck_path)
+    element_name = ELEMENT_CPP[deck.element]    # SOFA geometry name expected by Sofa.SofaFEM
 
-    deck_file = pathlib.Path(deck_path)
-    deck_name = f"{deck_file.parent.name}/{deck_file.stem}"
-    geo_spec = dict(deck["geometry"])
-    geometry = GEOMETRIES[geo_spec.pop("type")](**geo_spec)
-    solution = SOLUTIONS[(geometry.dim, deck["function"])](deck, geometry.spatial_dimensions)
-    element = deck["element"]
-    degree = deck["quadratureDegree"]
-    element_name = ELEMENT_CPP[element]     # SOFA geometry name expected by Sofa.SofaFEM
-
-    noise_floor = deck["noiseFloorRelative"]
-
-    sweep = refinement_sweep(deck["mesh"], geometry.extents)
-    study = ConvergenceStudy(deck_name, element, solution.equation, METRICS,
-                             deck["asymptoticTolerance"], deck["expect"],
-                             deck["expectTolerance"])
+    sweep = deck.levels()
+    study = ConvergenceStudy(deck, METRICS)
     opened = False                      # the deck's window, raised on the first level that has curves
     for level, (cells, h) in enumerate(sweep, start=1):
         label = 'x'.join(str(count) for count in cells)
@@ -202,9 +167,9 @@ def run(deck_path, output):
         # meet.
         res = [count + 1 for count in cells]
         root = Sofa.Core.Node("root")
-        MMSScene(geometry=geometry, material=deck["material"], force_field=deck["forceField"],
-                 element=element, resolution=res, solvers=deck["solvers"], mms=solution,
-                 source_quadrature_degree=deck["sourceQuadratureDegree"]).build(root)
+        MMSScene(geometry=deck.geometry, material=deck.material, force_field=deck.force_field,
+                 element=deck.element, resolution=res, solvers=deck.solvers, mms=deck.solution,
+                 source_quadrature_degree=deck.source_quadrature_degree).build(root)
         Sofa.Simulation.init(root)
         Sofa.Simulation.animate(root, root.dt.value)
         beam = root.beam.Beam
@@ -216,29 +181,29 @@ def run(deck_path, output):
         live_windows = output["live"]
         if live_windows is not None and pcg and pcg["curves"]:
             if not opened:
-                live_windows.figure(deck_name, solution.equation, element, len(sweep),
+                live_windows.figure(deck.name, deck.equation, deck.element, len(sweep),
                                     pcg["tolerance"])
                 opened = True
-            live_windows.add(deck_name, label, pcg["curves"])
+            live_windows.add(deck.name, label, pcg["curves"])
 
         print_progress(level, len(sweep), label, "norms")
         nodes = beam.dofs.rest_position.array()
         uh = beam.dofs.position.array() - nodes
         # node_indices[e] = the mesh-node indices forming element e (from the topology).
-        node_indices = getattr(beam.topology, CONTAINER[element][1]).array()
+        node_indices = getattr(beam.topology, CONTAINER[deck.element][1]).array()
 
         # The mapping is shared by every norm below rather than rebuilt inside each of them.
-        quadrature = MeshQuadrature(nodes, node_indices, element_name, degree)
+        quadrature = MeshQuadrature(nodes, node_indices, element_name, deck.quadrature_degree)
         # The energy comes off the force field itself rather than Node.computeEnergy(), whose subtree
         # sum also picks up the point-load ConstantForceField that stands in for a traction in 1D.
-        measurement = Measurement(quadrature, uh, solution, beam.FEM.getPotentialEnergy())
+        measurement = Measurement(quadrature, uh, deck.solution, beam.FEM.getPotentialEnergy())
 
         # The element count the mapping actually produced, since the deck states cells: one row of
         # node_indices per element, so 6x the cells for tetrahedra and 2x for triangles.
         study.add(LevelResult(
             label=label, h=h, elements=len(node_indices),
             values={metric.name: metric.measure(measurement) for metric in METRICS},
-            floors={metric.name: noise_floor * metric.scale(measurement)
+            floors={metric.name: deck.noise_floor_relative * metric.scale(measurement)
                     for metric in METRICS},
             cpp_ratio=measurement.cpp_ratio,
             newton=newton_diagnostics(getattr(beam, 'newton', None)),
@@ -294,7 +259,7 @@ if __name__ == "__main__":
                       if study is None or not study.ok()]
         else:
             study = run(arguments[0], output)
-            failed = [] if study.ok() else [study.deck]
+            failed = [] if study.ok() else [study.name]
     finally:
         # Even if the sweep raised: the windows drawn so far are worth keeping, and the pipe has to be
         # closed for the child to know nothing more is coming. It is never waited on -- that is what
