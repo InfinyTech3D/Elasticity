@@ -17,63 +17,17 @@ import Sofa.Simulation
 from VnV.verification.registry import GEOMETRIES, SOLUTIONS
 from VnV.verification.scene import MMSScene
 from VnV.verification.fem import MeshQuadrature
-from VnV.verification.metrics import METRICS, Measurement
+from VnV.verification.metrics import METRICS, REPORTED, Measurement
+from VnV.verification.report import (clear_progress, print_overview, print_progress, print_summary,
+                                     print_table)
 from VnV.verification.study import ConvergenceStudy, LevelResult
 from VnV.sofa.conventions import CONTAINER, ELEMENT_CPP
 from VnV.sofa.scene import load_plugins
-
-# The reported subset, for the overview table -- which prints a column per metric even for a deck that
-# raised and therefore has no study to ask.
-REPORTED = [metric for metric in METRICS if metric.reported]
-
-GREEN, RED, RESET = "\033[32m", "\033[31m", "\033[0m"
-
-PROGRESS_WIDTH = 20
 
 FIGURE_DIR = pathlib.Path(__file__).parent / "figures"
 
 # The records are the run's evidence rather than a rendering of it, so they keep their own directory.
 RESULTS_DIR = pathlib.Path(__file__).parent / "results"
-
-# The rates-only table's per-metric column, wide enough for the `not reached` the summary can print
-# underneath it. With the diagnostics on, a metric spans its value and rate columns instead.
-RATE_COLUMN = 11
-
-
-def paint(cell, accepted):
-    """Green if the settling test kept this rate, red if it discarded it.
-
-    The cell arrives already padded: the escape sequences are characters as far as a format width is
-    concerned, so colouring before padding would widen the column by the length of the codes. Colour
-    is a reading aid rather than data, hence the tty guard -- a redirected run stays plain text.
-    """
-    if not cell.strip() or not sys.stdout.isatty():
-        return cell
-    return f"{GREEN if accepted else RED}{cell}{RESET}"
-
-
-def print_progress(level, levels, label, phase):
-    """The level being run and which half of it, rewritten in place -- the table waits for the sweep.
-
-    The finest levels dominate the wall clock, so the bar tracks levels rather than time: it is there
-    to say which mesh is running, not to predict when it finishes. `phase` separates the SOFA side of
-    a level -- scene build, init, solve -- from the Python norms, the two places a level can sit for a
-    while. The label is padded so the phase does not shift as the element counts grow.
-    """
-    if not sys.stdout.isatty():
-        return
-    filled = round(PROGRESS_WIDTH * level / levels)
-    bar = "=" * filled + "-" * (PROGRESS_WIDTH - filled)
-    # \r to reuse the line and \033[K to drop whatever the previous, possibly longer, line left.
-    sys.stdout.write(f"\r  {level}/{levels} [{bar}] {label:<14} {phase}\033[K")
-    sys.stdout.flush()
-
-
-def clear_progress():
-    """Leave the line the bar was using empty, so the table starts on a clean row."""
-    if sys.stdout.isatty():
-        sys.stdout.write("\r\033[K")
-        sys.stdout.flush()
 
 
 def newton_diagnostics(newton):
@@ -162,144 +116,6 @@ def refinement_sweep(mesh, extents):
     return sweep
 
 
-def print_table(study, show_diagnostics):
-    """One row per level, printed once the sweep is over.
-
-    A rate can only be coloured after the finest level exists: the settled range is the *trailing*
-    run of orders, so whether a rate belongs to it is not known when its level is solved. Hence the
-    whole table waits for the study's retained level indices, and the trailing run of green rates is
-    what reports the asymptotic range.
-
-    The order-of-accuracy test's evidence is the sequence of orders in the reported norms, so that is
-    the default table and the metric name sits over its own rate column. The error magnitudes, the dU
-    and aeuh cross-check, the cpp/py energy check and the Newton residuals are what those orders were
-    computed from or against rather than the evidence itself, so they wait for `show_diagnostics`. The
-    solve's `status` does not: a rate off an unconverged level is not evidence of anything, so the
-    guard stays in both tables.
-    """
-    metrics = study.metrics if show_diagnostics else study.reported
-    accepted = {metric.name: study.accepted(metric.name) for metric in metrics}
-    header = f"{'cells':>12} {'h':>10}"
-    # What the deck asked for is cells; what the mapping made of them is an element count worth
-    # seeing, since it is 6x or 2x the cells for the split element types.
-    if show_diagnostics:
-        header += f" {'elements':>9}"
-    for metric in metrics:
-        header += (f" {metric.name:>12} {'rate':>6}" if show_diagnostics
-                   else f" {metric.name:>{RATE_COLUMN}}")
-    if show_diagnostics:
-        # cpp/py: SOFA's own potential energy against the Python quadrature; should read 1.
-        # nIt / r/r0: the Newton solve, so algebraic error polluting the fine end is visible.
-        header += f" {'cpp/py':>8} {'nIt':>4} {'r/r0':>8}"
-    print(header + " status")
-
-    for index, level in enumerate(study.levels):
-        row = f"{level.label:>12} {level.h:>10.5f}"
-        if show_diagnostics:
-            row += f" {level.elements:>9}"
-        for metric in metrics:
-            rate = level.rates[metric.name]
-            # A discarded pair reads red whether it was discarded for a stated reason or simply fell
-            # outside the settled run.
-            cell = f"{rate.value:.2f}" if rate.value is not None else rate.reason
-            accepted_here = index in accepted[metric.name]
-            if show_diagnostics:
-                row += f" {level.values[metric.name]:>12.3e} {paint(f'{cell:>6}', accepted_here)}"
-            else:
-                row += f" {paint(f'{cell:>{RATE_COLUMN}}', accepted_here)}"
-
-        newton = level.newton
-        if show_diagnostics:
-            row += f" {level.cpp_ratio:>8.5f}"
-            if newton is None:
-                row += f" {'':>4} {'':>8}"
-            else:
-                row += f" {newton['iterations']:>4} {newton['reduction']:>8.1e}"
-        # The status is the last column, so it needs no padding; `no newton` takes no colour -- the
-        # deck has no Newton solve to pass or fail, which is neither acceptance nor rejection.
-        if newton is None:
-            row += " no newton"
-        else:
-            row += f" {paint(newton['status'], newton['status'] == 'ok')}"
-        print(row)
-
-
-def print_summary(study, show_diagnostics):
-    """Per metric: the order in the settled range, its spread there, and what was expected.
-
-    Which levels the range covers is not restated here -- the green rates in the table above are it.
-    `show_diagnostics` picks which metrics and which column widths, so these rows stay under the
-    metric they belong to in either table.
-    """
-    metrics = study.metrics if show_diagnostics else study.reported
-    settled = [study.verdict(metric.name) for metric in metrics]
-    judgements = [study.passed(metric.name) for metric in metrics]
-    rows = [
-        # The order row is the run's verdict, so it carries the table's colours: green where the
-        # settled order is the one the deck expects, red where it is not or where none was reached.
-        # The deck states the tolerance that comparison needs, which is what makes this a verdict
-        # rather than the reader's own judgement -- and the settling test still never looks at
-        # `expected`, so the range was chosen independently of the answer it is now held against.
-        # dU and aeuh are not judged, so they keep the older rule: green wherever an order was reached.
-        ("order p", [f"{s.order:.2f}" if s else "not reached" for s in settled],
-         [reached is not None if judgement is None else judgement
-          for judgement, reached in zip(judgements, settled)]),
-        ("spread", [f"{s.spread:.2f}" if s else "--" for s in settled], None),
-        ("expected", [f"{study.expected[metric.name]:.1f}" for metric in metrics], None),
-    ]
-
-    print()
-    for label, cells, coloured in rows:
-        # Past the cells and h columns, plus the element count the diagnostics table inserts there.
-        row = f"{label:>12} {'':>10}" + (f" {'':>9}" if show_diagnostics else "")
-        for index, cell in enumerate(cells):
-            padded = f"{cell:>12} {'':>6}" if show_diagnostics else f"{cell:>{RATE_COLUMN}}"
-            row += f" {padded if coloured is None else paint(padded, coloured[index])}"
-        print(row)
-
-    unconverged = study.unconverged()
-    if unconverged:
-        print(f"\n  Newton did not converge at: {', '.join(unconverged)}"
-              f" -- the orders above are contaminated by algebraic error at those levels.")
-
-
-def print_overview(results, show_diagnostics):
-    """One line per deck: the settled order per metric, `--` where none was reached.
-
-    The per-deck tables above distinguish *why* a metric has no order -- floor, oscillation,
-    divergence, never settled -- which this collapses to `--` for the sake of one line per deck.
-    A deck that raised reads `error` instead, so a crash is never mistaken for a metric that simply
-    did not settle. The orders carry the same colours they do per deck.
-
-    What an order is held against is the deck's own `expect`, so there is no expectation row across
-    decks: each deck's summary above prints the numbers that deck was judged by.
-    """
-    metrics = METRICS if show_diagnostics else REPORTED
-    print()
-    header = f"{'deck':<44}"
-    for metric in metrics:
-        header += f" {metric.name:>9}"
-    print(header + f" {'solver':>9}")
-
-    for name, study in results:
-        row = f"{name:<44}"
-        for metric in metrics:
-            settled = None if study is None else study.verdict(metric.name)
-            judgement = None if study is None else study.passed(metric.name)
-            cell = "error" if study is None else f"{settled.order:.2f}" if settled else "--"
-            # A judged metric takes the verdict's colour; dU and aeuh only say whether an order was
-            # reached at all, and a deck that raised reads red on every column.
-            row += f" {paint(f'{cell:>9}', settled is not None if judgement is None else judgement)}"
-        # A settled order means nothing at a level where the solve did not converge, so the count of
-        # such levels rides along on the same line rather than living only in the per-deck table.
-        if study is None:
-            solver_cell = "error"
-        else:
-            unconverged = len(study.unconverged())
-            solver_cell = "ok" if not unconverged else f"{unconverged} bad"
-        print(row + f" {paint(f'{solver_cell:>9}', solver_cell == 'ok')}")
-
-
 def plots_module():
     """matplotlib stays optional: a run that only prints tables must not need it installed."""
     from VnV.verification import plots
@@ -352,7 +168,8 @@ def run_all(directory, output):
             clear_progress()            # it raised mid-sweep, so the bar still owns the line
             print(f"  failed: {type(error).__name__}: {error}")
             results.append((name, None))
-    print_overview(results, output["diagnostics"])
+    # The metric list is the caller's: a deck that raised has no study to ask for its own.
+    print_overview(results, METRICS if output["diagnostics"] else REPORTED)
     return results
 
 
