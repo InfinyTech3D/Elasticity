@@ -3,7 +3,7 @@
   "element":     "tet",
   "quadratureDegree": 2,
   "sourceQuadratureDegree": 2,
-  "material":    { "youngModulus": 1e6, "poissonRatio": 0.3 },
+  "material":    { "type": "LinearElastic", "youngModulus": 1e6, "poissonRatio": 0.3 },
   "forceField":  "LinearSmallStrainFEMForceField",
   "solvers": {
     "integration":  { "type": "StaticSolver" },
