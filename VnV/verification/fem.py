@@ -1,4 +1,4 @@
-"""Dim-generic FEM numerics: error norms integrated with SOFA's quadrature."""
+"""Dim-generic FEM numerics: SOFA's quadrature, the fields sampled on it, and the norms over them."""
 
 import numpy as np
 
@@ -36,67 +36,41 @@ class MeshQuadrature:
         """Integrate a scalar given at every (element, quadrature point)."""
         return float(np.sum(values * self.scale))
 
-    def interpolate(self, field):
+    def values(self, field):
         """A nodal field at every quadrature point: (e, q, c)."""
         return np.einsum('qa,eac->eqc', self.shape_values, np.asarray(field)[self.node_indices])
 
-    def gradient(self, field):
+    def grads(self, field):
         """Gradient of a nodal field: (e, q, c, d) = d(u_c)/dx_d."""
         return np.einsum('eac,eqad->eqcd',
                          np.asarray(field)[self.node_indices], self.physical_gradients)
 
-
-def l2_error(quadrature, u_h, u_exact):
-    """L2 error norm: sqrt( integral over the mesh of ||u_h - u_exact||^2 )."""
-    difference = quadrature.interpolate(u_h) - u_exact(quadrature.points)
-    return float(np.sqrt(quadrature.integrate(np.sum(difference * difference, axis=-1))))
+    def sample(self, field):
+        """A manufactured field at every quadrature point: the one seam where it meets this mesh."""
+        return field(self.points)
 
 
-def h1_semi_error(quadrature, u_h, grad_u_exact):
-    """H1 semi-norm error: sqrt( integral over the mesh of ||grad u_h - grad u_exact||_F^2 )."""
-    difference = quadrature.gradient(u_h) - grad_u_exact(quadrature.points)
-    return float(np.sqrt(quadrature.integrate(np.sum(difference * difference, axis=(-2, -1)))))
+def l2(quadrature, values):
+    """L2 norm of a vector field given at every quadrature point: (e, q, c) -> scalar."""
+    return float(np.sqrt(quadrature.integrate(np.sum(values * values, axis=-1))))
 
 
-def exact_l2_norm(quadrature, u_exact):
-    """L2 norm of the exact field: the magnitude l2_error is small or large *relative to*."""
-    value = u_exact(quadrature.points)
-    return float(np.sqrt(quadrature.integrate(np.sum(value * value, axis=-1))))
+def frobenius(quadrature, tensors):
+    """L2 norm of a tensor field, Frobenius over its last two axes: (e, q, c, d) -> scalar."""
+    return float(np.sqrt(quadrature.integrate(np.sum(tensors * tensors, axis=(-2, -1)))))
 
 
-def exact_h1_semi_norm(quadrature, grad_u_exact):
-    """H1 semi-norm of the exact field: the magnitude h1_semi_error is measured against."""
-    gradient = grad_u_exact(quadrature.points)
-    return float(np.sqrt(quadrature.integrate(np.sum(gradient * gradient, axis=(-2, -1)))))
+def energy(quadrature, gradients, energy_density):
+    """Elastic energy of a displacement gradient field: integral over the mesh of psi."""
+    return quadrature.integrate(energy_density(gradients))
 
 
-def energy(quadrature, u_h, energy_density):
-    """Elastic energy of a discrete displacement field: integral over the mesh of psi(grad u_h)."""
-    return quadrature.integrate(energy_density(quadrature.gradient(u_h)))
-
-
-def exact_energy(quadrature, grad_u_exact, energy_density):
-    """Elastic energy of the exact field, on the same mesh and quadrature as the discrete one."""
-    return quadrature.integrate(energy_density(grad_u_exact(quadrature.points)))
-
-
-def orthogonality_defect(quadrature, u_h, grad_u_exact, constitutive):
+def orthogonality_defect(quadrature, grad_h, grad_error, constitutive):
     """a(e, u_h) with e = u_h - u: the Galerkin orthogonality defect.
 
     Zero when u_h solves the continuous variational problem against its own space, which needs the
     load functional integrated exactly. It is what separates |U - U_h| from 0.5 ||e||_E^2.
     """
-    grad_u_h = quadrature.gradient(u_h)
-    grad_e = grad_u_h - grad_u_exact(quadrature.points)
-    strain_e = 0.5 * (grad_e + np.swapaxes(grad_e, -2, -1))
-    strain_uh = 0.5 * (grad_u_h + np.swapaxes(grad_u_h, -2, -1))
-    return quadrature.integrate(np.sum(constitutive(strain_e) * strain_uh, axis=(-2, -1)))
-
-
-def energy_norm_error(quadrature, u_h, grad_u_exact, energy_density):
-    """Energy norm of the error: sqrt( 2 * integral of psi(grad u_h - grad u_exact) ).
-
-    The norm the Galerkin solution actually minimizes in -- a material-weighted H1 semi-norm.
-    """
-    difference = quadrature.gradient(u_h) - grad_u_exact(quadrature.points)
-    return float(np.sqrt(2.0 * quadrature.integrate(energy_density(difference))))
+    strain_e = 0.5 * (grad_error + np.swapaxes(grad_error, -2, -1))
+    strain_h = 0.5 * (grad_h + np.swapaxes(grad_h, -2, -1))
+    return quadrature.integrate(np.sum(constitutive(strain_e) * strain_h, axis=(-2, -1)))

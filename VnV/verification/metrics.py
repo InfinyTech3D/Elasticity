@@ -4,12 +4,11 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
-from VnV.verification.fem import (energy, energy_norm_error, exact_energy, exact_h1_semi_norm,
-                                  exact_l2_norm, h1_semi_error, l2_error, orthogonality_defect)
+from VnV.verification.fem import energy, frobenius, l2, orthogonality_defect
 
 
 class Measurement:
-    """One solved level: the mesh, the discrete field, and the energies more than one metric reads.
+    """One solved level, sampled once: the fields at every quadrature point, and the energies.
 
     The exact energy is integrated in its own right rather than derived from the energy norm.
     Writing e = u_h - u for the error field, G = grad u, G_h = grad u_h, and C for the
@@ -34,13 +33,26 @@ class Measurement:
     scale, dU's value and scale, and aeuh's scale.
     """
 
-    def __init__(self, quadrature, u_h, solution, cpp_energy):
+    def __init__(self, quadrature, displacement, solution, cpp_energy):
         self.quadrature = quadrature
-        self.u_h = u_h
         self.solution = solution
-        self.energy_h = energy(quadrature, u_h, solution.energy_density)
-        self.energy_exact = exact_energy(quadrature, solution.grad_u, solution.energy_density)
         self.cpp_energy = cpp_energy
+
+        # Sampled here rather than inside each norm: the exact field is a lambdified sympy expression
+        # evaluated one component at a time over every quadrature point, which is the most expensive
+        # thing a level does outside the solve, and five norms used to ask for it separately.
+        self.u_h = quadrature.values(displacement)
+        self.u_exact = quadrature.sample(solution.u)
+        self.grad_h = quadrature.grads(displacement)
+        self.grad_exact = quadrature.sample(solution.grad_u)
+
+        # The error fields the norms are taken over. A metric measures on these and takes its noise
+        # floor on the exact ones, so the two go through the same reducer and stay commensurate.
+        self.u_error = self.u_h - self.u_exact
+        self.grad_error = self.grad_h - self.grad_exact
+
+        self.energy_h = energy(quadrature, self.grad_h, solution.energy_density)
+        self.energy_exact = energy(quadrature, self.grad_exact, solution.energy_density)
 
     @property
     def cpp_ratio(self):
@@ -81,10 +93,10 @@ class L2(Metric):
     name = "L2"
 
     def measure(self, m):
-        return l2_error(m.quadrature, m.u_h, m.solution.u)
+        return l2(m.quadrature, m.u_error)
 
     def scale(self, m):
-        return exact_l2_norm(m.quadrature, m.solution.u)
+        return l2(m.quadrature, m.u_exact)
 
 
 class H1(Metric):
@@ -93,10 +105,10 @@ class H1(Metric):
     name = "H1"
 
     def measure(self, m):
-        return h1_semi_error(m.quadrature, m.u_h, m.solution.grad_u)
+        return frobenius(m.quadrature, m.grad_error)
 
     def scale(self, m):
-        return exact_h1_semi_norm(m.quadrature, m.solution.grad_u)
+        return frobenius(m.quadrature, m.grad_exact)
 
 
 class EnergyNorm(Metric):
@@ -105,8 +117,8 @@ class EnergyNorm(Metric):
     name = "Enorm"
 
     def measure(self, m):
-        return energy_norm_error(m.quadrature, m.u_h, m.solution.grad_u,
-                                 m.solution.energy_density)
+        return float(np.sqrt(2.0 * energy(m.quadrature, m.grad_error,
+                                          m.solution.energy_density)))
 
     def scale(self, m):
         return np.sqrt(2.0 * m.energy_exact)
@@ -132,7 +144,7 @@ class OrthogonalityDefect(Metric):
     reported = False
 
     def measure(self, m):
-        return abs(orthogonality_defect(m.quadrature, m.u_h, m.solution.grad_u,
+        return abs(orthogonality_defect(m.quadrature, m.grad_h, m.grad_error,
                                         m.solution.constitutive))
 
     def scale(self, m):
