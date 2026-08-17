@@ -35,6 +35,14 @@ DECK_ROOT = pathlib.Path(__file__).parent
 # compared on the same deck.
 DEFAULT_OUTPUT_DIR = DECK_ROOT
 
+# Drawing is an inspection concern, so this is loaded there rather than sitting in PLUGINS for every
+# headless sweep to pay for. It is what provides VisualStyle.
+VISUAL_PLUGIN = "Sofa.Component.Visual"
+
+# The size --gui creates its window at. SofaGLFWBaseGUI's own default is 0 x 0, so a window has to be
+# given one; 800 x 600 is what runSofa passes.
+WINDOW_SIZE = (800, 600)
+
 
 def newton_diagnostics(newton):
     """Iterations, residual reduction and stopping status of the Newton solve at one level.
@@ -104,6 +112,75 @@ def plots_module():
     return plots
 
 
+def resolve_deck(path):
+    """A deck path, taken relative to the deck root when it does not resolve where it was typed.
+
+    The two entry points below run from different working directories -- runSofa chdirs to the
+    scene's own directory while it loads it -- so `2D/trigonometric_tri.json` has to mean the same
+    deck either way.
+    """
+    path = pathlib.Path(path)
+    return path if path.is_absolute() or path.exists() else DECK_ROOT / path
+
+
+def level_label(cells):
+    """A mesh named by its cells per axis, as every table and figure names it."""
+    return 'x'.join(str(count) for count in cells)
+
+
+def build_level(deck, cells, root):
+    """The scene for one mesh, on `root`. The sweep, --gui and createScene all build through here."""
+    # RegularGridTopology's `n` counts grid points, not cells: nodes = cells + 1 per axis, and its
+    # spacing is extent/(n-1). Converting here keeps that the only place the two conventions meet.
+    res = [count + 1 for count in cells]
+    MMSScene(geometry=deck.geometry, material=deck.material, force_field=deck.force_field,
+             element=deck.element, resolution=res, solvers=deck.solvers, mms=deck.solution,
+             source_quadrature_degree=deck.source_quadrature_degree).build(root)
+
+
+def add_visual_style(root):
+    """Make the scene visible. Inspection only -- a sweep never draws, so this is not in build_level.
+
+    Nothing in an MMS scene draws by default: there is no visual model, and the components that can
+    draw themselves are gated on display flags no one has set. `showForceFields` is what puts the
+    mesh on screen, since the FEM force field renders its own elements. `showBehaviorModels` is what
+    puts the boundary conditions there: BaseROI::draw returns early without it, so a BoxROI's
+    selection -- the thing most worth looking at -- would be invisible. The GUI's display-flags panel
+    toggles the rest from here.
+
+    Its own RequiredPlugin so the scene stays self-contained under runSofa, as the rest of it is.
+    """
+    root.addObject('RequiredPlugin', name='visual', pluginName=[VISUAL_PLUGIN])
+    root.addObject('VisualStyle', displayFlags='showForceFields showBehaviorModels')
+
+
+def measure(deck, beam, label, h, pcg):
+    """One solved mesh as a LevelResult: the norms, their floors, and how the solve went."""
+    nodes = beam.dofs.rest_position.array()
+    uh = beam.dofs.position.array() - nodes
+    # node_indices[e] = the mesh-node indices forming element e (from the topology).
+    node_indices = getattr(beam.topology, CONTAINER[deck.element][1]).array()
+
+    # The mapping is shared by every norm rather than rebuilt inside each of them. ELEMENT_CPP is the
+    # SOFA geometry name Sofa.SofaFEM expects.
+    quadrature = MeshQuadrature(nodes, node_indices, ELEMENT_CPP[deck.element],
+                                deck.quadrature_degree)
+    # The energy comes off the force field itself rather than Node.computeEnergy(), whose subtree sum
+    # also picks up the point-load ConstantForceField that stands in for a traction in 1D.
+    measurement = Measurement(quadrature, uh, deck.solution, beam.FEM.getPotentialEnergy())
+
+    # The element count the mapping actually produced, since the deck states cells: one row of
+    # node_indices per element, so 6x the cells for tetrahedra and 2x for triangles.
+    return LevelResult(
+        label=label, h=h, elements=len(node_indices),
+        values={metric.name: metric.measure(measurement) for metric in METRICS},
+        floors={metric.name: deck.noise_floor_relative * metric.scale(measurement)
+                for metric in METRICS},
+        cpp_ratio=measurement.cpp_ratio,
+        newton=newton_diagnostics(getattr(beam, 'newton', None)),
+        pcg=pcg)
+
+
 def write_results(record, output_dir):
     """The record to disk, one file per deck, named as its figures are."""
     directory = output_dir / "results"
@@ -168,23 +245,16 @@ def run(deck_path, args):
     # Parsed and checked before anything is built, so a mistyped key costs a message rather than a
     # sweep that dies once the first mesh has already been solved.
     deck = Deck.load(deck_path)
-    element_name = ELEMENT_CPP[deck.element]    # SOFA geometry name expected by Sofa.SofaFEM
 
     sweep = deck.levels()
     study = ConvergenceStudy(deck, METRICS)
     opened = False                      # the deck's window, raised on the first level that has curves
     for level, (cells, h) in enumerate(sweep, start=1):
-        label = 'x'.join(str(count) for count in cells)
+        label = level_label(cells)
         print_progress(level, len(sweep), label, "sofa")
 
-        # RegularGridTopology's `n` counts grid points, not cells: nodes = cells + 1 per axis, and
-        # its spacing is extent/(n-1). Converting here keeps that the only place the two conventions
-        # meet.
-        res = [count + 1 for count in cells]
         root = Sofa.Core.Node("root")
-        MMSScene(geometry=deck.geometry, material=deck.material, force_field=deck.force_field,
-                 element=deck.element, resolution=res, solvers=deck.solvers, mms=deck.solution,
-                 source_quadrature_degree=deck.source_quadrature_degree).build(root)
+        build_level(deck, cells, root)
         Sofa.Simulation.init(root)
         Sofa.Simulation.animate(root, root.dt.value)
         beam = root.beam.Beam
@@ -202,27 +272,7 @@ def run(deck_path, args):
             live_windows.add(deck.name, label, pcg["curves"])
 
         print_progress(level, len(sweep), label, "norms")
-        nodes = beam.dofs.rest_position.array()
-        uh = beam.dofs.position.array() - nodes
-        # node_indices[e] = the mesh-node indices forming element e (from the topology).
-        node_indices = getattr(beam.topology, CONTAINER[deck.element][1]).array()
-
-        # The mapping is shared by every norm below rather than rebuilt inside each of them.
-        quadrature = MeshQuadrature(nodes, node_indices, element_name, deck.quadrature_degree)
-        # The energy comes off the force field itself rather than Node.computeEnergy(), whose subtree
-        # sum also picks up the point-load ConstantForceField that stands in for a traction in 1D.
-        measurement = Measurement(quadrature, uh, deck.solution, beam.FEM.getPotentialEnergy())
-
-        # The element count the mapping actually produced, since the deck states cells: one row of
-        # node_indices per element, so 6x the cells for tetrahedra and 2x for triangles.
-        study.add(LevelResult(
-            label=label, h=h, elements=len(node_indices),
-            values={metric.name: metric.measure(measurement) for metric in METRICS},
-            floors={metric.name: deck.noise_floor_relative * metric.scale(measurement)
-                    for metric in METRICS},
-            cpp_ratio=measurement.cpp_ratio,
-            newton=newton_diagnostics(getattr(beam, 'newton', None)),
-            pcg=pcg))
+        study.add(measure(deck, beam, label, h, pcg))
 
         Sofa.Simulation.unload(root)
 
@@ -233,6 +283,75 @@ def run(deck_path, args):
     print_summary(study, args.diagnostics_on)
     finish_deck(study, args)
     return study
+
+
+def inspect(deck_path, args):
+    """One level of one deck, built but not stepped, in a window.
+
+    Not stepped on purpose. The point is the scene as it was assembled -- the regions, the selections
+    and the loads before anything moves -- and stepping it first would show only the answer, which the
+    tables already give. The GUI can animate it from there if that is what you want. Nothing is lost
+    by waiting: the controllers fill their Data on the init-done event, so a BoxROI's selection and a
+    clamp's indices are already there to read.
+
+    initRoot rather than init, because a viewer needs the bounding box that init does not compute --
+    with scene checking off, since that loads a plugin whose logging would land on top of everything.
+    MainLoop does not return until the window closes, which is why this is a mode and not a flag.
+    """
+    import SofaRuntime
+    import Sofa.Gui
+    import Sofa.Helper
+
+    # Here rather than in PLUGINS: a headless sweep must not pull in a GUI. SofaImGui is the reason
+    # this is worth doing at all -- it brings the scene graph and the Data panels, so a BoxROI's
+    # selection and a controller-filled Data can be read on the spot.
+    for plugin in ("SofaGLFW", "SofaImGui", VISUAL_PLUGIN):
+        SofaRuntime.importPlugin(plugin)
+
+    deck = Deck.load(deck_path)
+    cells, _ = deck.levels()[args.level]
+    root = Sofa.Core.Node("root")
+    add_visual_style(root)
+    build_level(deck, cells, root)
+    Sofa.Simulation.initRoot(root, False)
+
+    # runSofa's own start-up sequence, and it has to be mimicked rather than guessed at. Without a
+    # config directory BaseGUI leaves it at ".", and every artefact the GUI writes -- BaseViewer.ini,
+    # lastUsedGUI.ini, loadedPlugins.ini, imgui/settings.ini -- routes through it and lands in
+    # whatever directory the runner was started from. Without SetDimension the window is created at
+    # SofaGLFWBaseGUI's default of 0 x 0. Both before and after createGUI respectively, as runSofa
+    # does it: the config path is read while the GUI comes up, and the resolution is applied to a
+    # window that already exists.
+    Sofa.Gui.BaseGUI.SetConfigDirectoryPath(
+        os.path.join(Sofa.Helper.Utils.GetSofaUserLocalDirectory(), "config"), True)
+    Sofa.Gui.GUIManager.Init("VnV", "imgui")
+    if Sofa.Gui.GUIManager.createGUI(root) != 0:
+        sys.exit("--gui: no window could be created; is there a display?")
+    Sofa.Gui.GUIManager.SetDimension(*WINDOW_SIZE)
+    Sofa.Gui.GUIManager.CenterWindow()
+    print(f"\n  {deck.name} level {args.level} ({level_label(cells)}): built, not stepped."
+          f" Animate from the GUI. Close the window to exit.")
+    # The GUI owns the process from here, and a redirected run buffers stdout independently of the
+    # stderr SOFA logs to, so this lands after the window's own output without the flush.
+    sys.stdout.flush()
+    Sofa.Gui.GUIManager.MainLoop(root)
+    Sofa.Gui.GUIManager.closeGUI()
+
+
+def createScene(root):
+    """runSofa entry point: `runSofa -l SofaPython3 run.py --argv <deck> --argv <level>`.
+
+    runSofa imports this file as a module named after it, so `__name__` is never "__main__" here and
+    the CLI below does not run -- one runner, two ways in, one scene builder between them. It only
+    builds, as --gui does: runSofa owns the init, the stepping and the window from here. Neither door
+    measures anything; the sweep is what reports norms.
+    """
+    if len(sys.argv) != 3:
+        sys.exit("run.py under runSofa expects: --argv <deck> --argv <level>")
+    deck = Deck.load(resolve_deck(sys.argv[1]))
+    cells, _ = deck.levels()[int(sys.argv[2])]
+    add_visual_style(root)
+    build_level(deck, cells, root)
 
 
 def parse_arguments():
@@ -260,13 +379,36 @@ def parse_arguments():
                              "reports one line so the remaining decks still run")
     parser.add_argument("--output-dir", type=pathlib.Path, default=DEFAULT_OUTPUT_DIR,
                         help="parent of results/ and figures/ (default: alongside the decks)")
+    # Inspection, not measurement: one level in a window, for the errors a table cannot localize.
+    parser.add_argument("--gui", action="store_true",
+                        help="build one level of one deck and open a window on it, without "
+                             "sweeping and without stepping it")
+    parser.add_argument("--level", type=int,
+                        help="which refinement level --gui builds; 0 is the deck's coarsest")
     args = parser.parse_args()
+
+    # Stated rather than defaulted: which mesh is being looked at is the first thing to know about an
+    # inspection, and the coarsest is a habit rather than an obvious choice.
+    if args.gui and args.level is None:
+        parser.error("--gui needs --level")
+    if args.level is not None and not args.gui:
+        parser.error("--level only means something with --gui")
+    # Nine blocking windows in a row is not an inspection.
+    if args.gui and args.all:
+        parser.error("--gui takes one deck, not --all")
+
     args.live = None            # filled in below if a window can be opened at all
     return args
 
 
 if __name__ == "__main__":
     args = parse_arguments()
+
+    if args.gui:
+        # Before the scene, as the sweep does it: plugin logging belongs above the table, not in it.
+        load_plugins()
+        inspect(resolve_deck(args.deck), args)
+        sys.exit()
 
     # Whether a window can open at all is decided here, on this machine, rather than left for the plot
     # process to discover: a batch or ssh session with no display still gets its figure, on disk.
@@ -288,7 +430,7 @@ if __name__ == "__main__":
             failed = [name for name, study in run_all(DECK_ROOT, args)
                       if study is None or not study.ok()]
         else:
-            study = run(args.deck, args)
+            study = run(resolve_deck(args.deck), args)
             failed = [] if study.ok() else [study.name]
     finally:
         # Even if the sweep raised: the windows drawn so far are worth keeping, and the pipe has to be
