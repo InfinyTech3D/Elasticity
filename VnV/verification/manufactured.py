@@ -22,25 +22,30 @@ class ManufacturedField(ABC):
     prescribe_displacement_on = {}    # {region: direction mask} where u is prescribed (fixed comps)
     traction_on = ()                  # regions where the derived traction is applied
 
-    def __init__(self, deck, spatial_dimensions):
-        self.deck = deck
+    def __init__(self, spec, geometry):
+        # The deck's "function" block, kept whole: what a field needs beyond an amplitude is that
+        # field's own business, so a new parameter is a deck key rather than a constructor argument.
+        self.spec = spec
         # Scale of the field, and with it how far the mesh moves for a given h: a deck asking for an
         # amplitude near its own extents deforms elements past inversion.
-        self.amplitude = deck["amplitude"]
-        self.spatial_dimensions = spatial_dimensions
+        self.amplitude = spec["amplitude"]
+        # Read off the geometry rather than kept as a reference to it: these two are all a field
+        # needs, and a stored geometry is a wider surface than that.
+        self.extents = geometry.named_extents
+        self.dim = geometry.dim
 
     @abstractmethod
     def displacement(self, coordinates):
         """Exact displacement as sympy expressions, one per component of the field's own dimension."""
 
     def wavenumber(self, extent):
-        """2 pi / one of the deck's geometric extents, the wavenumber of a full period across it.
+        """2 pi / one of the geometry's named extents, the wavenumber of a full period across it.
 
         Exact rather than the deck's float, so pi reaches `equation` as pi: a field printing 6.2832
         where it means 2 pi hides the wave it describes, and recovering the multiple afterwards is
         guesswork over what is known here.
         """
-        return 2 * sp.pi / sp.Rational(str(self.deck["geometry"][extent]))
+        return 2 * sp.pi / sp.Rational(str(self.extents[extent]))
 
 
 class ManufacturedSolution:
@@ -53,11 +58,12 @@ class ManufacturedSolution:
     derivative of the same dpsi/d(grad u).
     """
 
-    def __init__(self, field, material):
+    def __init__(self, field, material, spatial_dimensions):
         self.field = field
         self.material = material
-        dimensions = field.spatial_dimensions
-        self.spatial_dimensions = dimensions
+        # The embedding space belongs to neither the field nor the material: a field states itself in
+        # its own dimension and a material is a law, so the solution is where the two meet a mesh.
+        dimensions = spatial_dimensions
 
         self.coordinates = sp.Matrix(_COORDINATES[:dimensions])
         # A field states its own components and the embedding pads the rest with zeros: an embedded

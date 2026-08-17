@@ -11,6 +11,14 @@ class Geometry(ABC):
     dim: int          # topological dimension of the shape (and of the elements meshing it)
     extents: list
 
+    # Extent names in axis order; a shape carries the first `dim` of them as attributes.
+    EXTENT_NAMES = ("length", "width", "height")
+
+    @property
+    def named_extents(self) -> dict:
+        """Extent by name, in axis order: how a manufactured field asks for one of them."""
+        return {name: getattr(self, name) for name in self.EXTENT_NAMES[:self.dim]}
+
     def _init_space(self, spatial_dimensions):
         """Set the dimension of the space the shape is embedded in; defaults to its own."""
         self.spatial_dimensions = self.dim if spatial_dimensions is None else spatial_dimensions

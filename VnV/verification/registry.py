@@ -13,9 +13,9 @@ GEOMETRIES = {"Bar1D": Bar1D, "Beam2D": Beam2D, "Beam3D": Beam3D}
 # combination.
 MATERIALS = {"LinearElastic": LinearElastic}
 
-# (topological dim of the geometry, deck "function") -> manufactured-field class. The key is
-# the dimension of the PDE, not of the space it is solved in: that is spatial_dimensions, which
-# the field takes as a constructor argument.
+# (topological dim of the geometry, deck "function.type") -> manufactured-field class. The key is
+# the dimension of the PDE, not of the space it is solved in: a field states itself in its own
+# dimension and the solution embeds it, so one field name is one field however it is embedded.
 FIELDS = {
     (1, "quadratic"): Quadratic1D,
     (1, "trigonometric"): Trigonometric1D,

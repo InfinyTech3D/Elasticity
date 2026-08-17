@@ -18,7 +18,7 @@ from VnV.verification.registry import FIELDS, GEOMETRIES, MATERIALS
 
 # Every key a deck must state. Strict in both directions: a missing key is an omission and an unknown
 # key is a typo, and neither should be discovered halfway through a sweep.
-REQUIRED = {"geometry", "element", "function", "amplitude", "material", "forceField",
+REQUIRED = {"geometry", "element", "function", "material", "forceField",
             "quadratureDegree", "sourceQuadratureDegree", "solvers", "mesh",
             "asymptoticTolerance", "expect", "expectTolerance", "noiseFloorRelative"}
 
@@ -73,6 +73,14 @@ def _validate(name, spec):
     if "mesh" in spec and set(spec["mesh"]) != MESH_KEYS:
         problems.append(f"mesh must state exactly {sorted(MESH_KEYS)}, got {sorted(spec['mesh'])}")
 
+    # The field's own block. A type and an amplitude are common to every field and anything else in
+    # there is that field's business, so unknown keys are not an error the way they are at the top
+    # level -- the same reasoning `solvers` gets, one axis down.
+    function = spec.get("function", {})
+    absent = {"type", "amplitude"} - set(function)
+    if absent:
+        problems.append(f"function must state {sorted(absent)}")
+
     # The material is named like everything else rather than assumed: which constitutive law a study
     # verified against is part of what it verified, not a default the code picks.
     material = spec.get("material", {})
@@ -104,14 +112,14 @@ class Deck:
         geometry_spec = dict(spec["geometry"])
         self.geometry = GEOMETRIES[geometry_spec.pop("type")](**geometry_spec)
         # Keyed on the geometry's topological dimension, not the space it is embedded in: the same
-        # field name means the same field in 1D, 2D and 3D. Still handed the raw spec -- dropping that
-        # coupling is its own piece of work, not this one.
-        field = FIELDS[(self.geometry.dim, spec["function"])](
-            spec, self.geometry.spatial_dimensions)
+        # field name means the same field in 1D, 2D and 3D.
+        field = FIELDS[(self.geometry.dim, spec["function"]["type"])](
+            spec["function"], self.geometry)
         # Field and material are independent axes of a study, so the deck names one of each and this
-        # is where they are paired.
+        # is where they are paired, in the space the mesh will be embedded in.
         self.solution = ManufacturedSolution(
-            field, _material(spec["material"], self.geometry.spatial_dimensions))
+            field, _material(spec["material"], self.geometry.spatial_dimensions),
+            self.geometry.spatial_dimensions)
 
         self.element = spec["element"]
         self.material = spec["material"]
