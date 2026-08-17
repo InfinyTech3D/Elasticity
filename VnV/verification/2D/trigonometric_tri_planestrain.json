@@ -15,6 +15,9 @@
   },
   "mesh":        { "cells": [3, 3], "levels": 6, "refinementRatio": 2 },
   "asymptoticTolerance": 0.10,
+  "expect":      { "L2": 2.0, "H1": 1.0, "Enorm": 1.0, "dU": 2.0, "aeuh": 2.0 },
+  "expectTolerance": 0.15,
+  "noiseFloorRelative": 1e-9,
   "function":    "trigonometric",
   "amplitude":   0.1
 }

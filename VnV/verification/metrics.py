@@ -140,22 +140,15 @@ class OrthogonalityDefect(Metric):
 
 
 # Order matters: it is the column order of every table and the key order of every record.
+#
+# The orders these are expected to converge at are the deck's `expect`, not a constant here: they
+# follow from the element, not from the metric, so a P2 deck states different numbers for the same
+# five metrics. For P1 they read L2 -> 2, H1 -> 1, Enorm -> 1 (it is the material-weighted H1
+# semi-norm); dU is quadratic in the error so it would be 2 under Galerkin orthogonality, but it also
+# carries the load consistency error a(e, u_h) -- which FEMSourceTerm's fixed quadrature rule makes
+# O(h^2) too, so dU measures a mixture of the two. aeuh is that defect, reported so the mixture is
+# visible rather than silent: it is only safe to read dU as the energy error while aeuh converges
+# faster.
 METRICS = [L2(), H1(), EnergyNorm(), EnergyGap(), OrthogonalityDefect()]
 
 REPORTED = [metric for metric in METRICS if metric.reported]
-
-# Rates to expect for P1: L2 -> 2, H1 -> 1, Enorm -> 1 (it is the material-weighted H1 semi-norm).
-# dU is quadratic in the error so it would be 2 under Galerkin orthogonality, but it also carries
-# the load consistency error a(e, u_h) -- which FEMSourceTerm's fixed quadrature rule makes O(h^2)
-# too, so dU measures a mixture of the two. aeuh is that defect, reported so the mixture is visible
-# rather than silent: it is only safe to read dU as the energy error while aeuh converges faster.
-# The order-of-accuracy test compares the observed order against these; the observed one is only an
-# estimate of them inside the asymptotic range.
-FORMAL_ORDER = {"L2": 2.0, "H1": 1.0, "Enorm": 1.0, "dU": 2.0, "aeuh": 2.0}
-
-# A metric stops measuring the discretization and starts measuring its contaminants -- round-off,
-# the norm quadrature, the linear solve -- once it drops to their level. The floor is this fraction
-# of a reference magnitude of the metric's own dimension (see `Metric.scale`), so one number serves
-# all five. It catches round-off; it does not catch a loose solver tolerance, which sits far above
-# it and needs a tolerance-tightening run to expose.
-NOISE_FLOOR_RELATIVE = 1e-9

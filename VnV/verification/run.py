@@ -17,7 +17,7 @@ import Sofa.Simulation
 from VnV.verification.registry import GEOMETRIES, SOLUTIONS
 from VnV.verification.scene import MMSScene
 from VnV.verification.fem import MeshQuadrature
-from VnV.verification.metrics import FORMAL_ORDER, METRICS, NOISE_FLOOR_RELATIVE, Measurement
+from VnV.verification.metrics import METRICS, Measurement
 from VnV.verification.study import ConvergenceStudy, LevelResult
 from VnV.sofa.conventions import CONTAINER, ELEMENT_CPP
 from VnV.sofa.scene import load_plugins
@@ -266,6 +266,9 @@ def print_overview(results, show_diagnostics):
     divergence, never settled -- which this collapses to `--` for the sake of one line per deck.
     A deck that raised reads `error` instead, so a crash is never mistaken for a metric that simply
     did not settle. The orders carry the same colours they do per deck.
+
+    What an order is held against is the deck's own `expect`, so there is no expectation row across
+    decks: each deck's summary above prints the numbers that deck was judged by.
     """
     metrics = METRICS if show_diagnostics else REPORTED
     print()
@@ -288,11 +291,6 @@ def print_overview(results, show_diagnostics):
             unconverged = len(study.unconverged())
             solver_cell = "ok" if not unconverged else f"{unconverged} bad"
         print(row + f" {paint(f'{solver_cell:>9}', solver_cell == 'ok')}")
-
-    row = f"{'expected':<44}"
-    for metric in metrics:
-        row += f" {FORMAL_ORDER[metric.name]:>9.1f}"
-    print(row + f" {'ok':>9}")
 
 
 def plots_module():
@@ -359,9 +357,11 @@ def run(deck_path, output):
     degree = deck["quadratureDegree"]
     element_name = ELEMENT_CPP[element]     # SOFA geometry name expected by Sofa.SofaFEM
 
+    noise_floor = deck["noiseFloorRelative"]
+
     sweep = refinement_sweep(deck["mesh"], geometry.extents)
     study = ConvergenceStudy(deck_name, element, solution.equation, METRICS,
-                             deck["asymptoticTolerance"], FORMAL_ORDER)
+                             deck["asymptoticTolerance"], deck["expect"])
     opened = False                      # the deck's window, raised on the first level that has curves
     for level, (cells, h) in enumerate(sweep, start=1):
         label = 'x'.join(str(count) for count in cells)
@@ -408,7 +408,7 @@ def run(deck_path, output):
         study.add(LevelResult(
             label=label, h=h, elements=len(node_indices),
             values={metric.name: metric.measure(measurement) for metric in METRICS},
-            floors={metric.name: NOISE_FLOOR_RELATIVE * metric.scale(measurement)
+            floors={metric.name: noise_floor * metric.scale(measurement)
                     for metric in METRICS},
             cpp_ratio=measurement.cpp_ratio,
             newton=newton_diagnostics(getattr(beam, 'newton', None)),
