@@ -1,9 +1,11 @@
 """Deck-driven verification runner: dispatch a deck to an MMS convergence study."""
 
+import argparse
 import json
 import os
 import pathlib
 import sys
+import traceback
 
 import numpy as np
 
@@ -24,10 +26,14 @@ from VnV.verification.study import ConvergenceStudy, LevelResult
 from VnV.sofa.conventions import CONTAINER, ELEMENT_CPP
 from VnV.sofa.scene import load_plugins
 
-FIGURE_DIR = pathlib.Path(__file__).parent / "figures"
+# Decks live in the <dim>D/ subdirectories of this file's own directory, and only decks do.
+DECK_ROOT = pathlib.Path(__file__).parent
 
-# The records are the run's evidence rather than a rendering of it, so they keep their own directory.
-RESULTS_DIR = pathlib.Path(__file__).parent / "results"
+# Where `results/` and `figures/` land unless --output-dir says otherwise. Two directories rather than
+# one because a record is the run's evidence while a figure is a rendering of it. Pointing a run
+# somewhere else is what lets a baseline survive the next run, which is how two formulations get
+# compared on the same deck.
+DEFAULT_OUTPUT_DIR = DECK_ROOT
 
 
 def newton_diagnostics(newton):
@@ -98,37 +104,39 @@ def plots_module():
     return plots
 
 
-def write_results(record):
+def write_results(record, output_dir):
     """The record to disk, one file per deck, named as its figures are."""
-    RESULTS_DIR.mkdir(exist_ok=True)
-    path = RESULTS_DIR / f"{record['deck'].replace('/', '_')}.json"
+    directory = output_dir / "results"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{record['deck'].replace('/', '_')}.json"
     with open(path, "w") as f:
         # default=float: the orders come out of numpy, and json refuses a float64 it is not told about.
         json.dump(record, f, indent=2, default=float)
-    print(f"  wrote {path.relative_to(RESULTS_DIR.parent)}")
+    print(f"  wrote {path.relative_to(output_dir)}")
 
 
-def finish_deck(study, output):
+def finish_deck(study, args):
     """Close out a deck: the record first, then the figures drawn from it.
 
     One record serves the file and both figures, so a figure redrawn from disk and the run's own
     cannot come from different numbers.
     """
     record = study.to_json()
-    if output["results"]:
-        write_results(record)
-    if not (output["residuals"] or output["convergence"]):
+    if args.results_write:
+        write_results(record, args.output_dir)
+    if not (args.residuals_write or args.convergence_write):
         return
 
-    FIGURE_DIR.mkdir(exist_ok=True)
-    for path in plots_module().render(record, FIGURE_DIR, output["residuals"],
-                                     output["convergence"]):
-        print(f"  wrote {path.relative_to(FIGURE_DIR.parent)}")
-    if output["residuals"] and not any(level["pcg"] for level in record["levels"]):
+    figure_dir = args.output_dir / "figures"
+    figure_dir.mkdir(parents=True, exist_ok=True)
+    for path in plots_module().render(record, figure_dir, args.residuals_write,
+                                      args.convergence_write):
+        print(f"  wrote {path.relative_to(args.output_dir)}")
+    if args.residuals_write and not any(level["pcg"] for level in record["levels"]):
         print("  no linear-solver residuals to plot: this deck solves directly")
 
 
-def run_all(directory, output):
+def run_all(directory, args):
     """Every deck in the tree, each with its own table, then one line per deck.
 
     Returns [(name, study)] with a None study where the deck raised, so the caller can take an exit
@@ -139,17 +147,24 @@ def run_all(directory, output):
         name = f"{path.parent.name}/{path.stem}"
         print(f"\n--- {name} ---")
         try:
-            results.append((name, run(path, output)))
+            results.append((name, run(path, args)))
         except Exception as error:      # one deck that blows up must not hide the other eight
             clear_progress()            # it raised mid-sweep, so the bar still owns the line
             print(f"  failed: {type(error).__name__}: {error}")
+            # A single deck run outside --all raises and prints its own stack; inside --all the sweep
+            # has to keep going, so the stack is only printed when it is asked for. Without it, four
+            # decks failing on a new formulation is four re-runs to find four line numbers.
+            # On stdout, not print_exc's default stderr: the stack has to stay next to the deck it
+            # belongs to, and a redirected run buffers the two streams independently.
+            if args.traceback:
+                traceback.print_exc(file=sys.stdout)
             results.append((name, None))
     # The metric list is the caller's: a deck that raised has no study to ask for its own.
-    print_overview(results, METRICS if output["diagnostics"] else REPORTED)
+    print_overview(results, METRICS if args.diagnostics_on else REPORTED)
     return results
 
 
-def run(deck_path, output):
+def run(deck_path, args):
     # Parsed and checked before anything is built, so a mistyped key costs a message rather than a
     # sweep that dies once the first mesh has already been solved.
     deck = Deck.load(deck_path)
@@ -178,7 +193,7 @@ def run(deck_path, output):
         # a level, which is exactly when a live window should already be showing this level. The window
         # is another process's, so this only posts the curve -- drawing it costs this run nothing.
         pcg = pcg_diagnostics(getattr(beam, 'linearSolver', None))
-        live_windows = output["live"]
+        live_windows = args.live
         if live_windows is not None and pcg and pcg["curves"]:
             if not opened:
                 live_windows.figure(deck.name, deck.equation, deck.element, len(sweep),
@@ -214,58 +229,73 @@ def run(deck_path, output):
     clear_progress()
     # Every table and figure reads the study's own retained levels, so the green run and the reported
     # order cannot tell different stories about the same sweep.
-    print_table(study, output["diagnostics"])
-    print_summary(study, output["diagnostics"])
-    finish_deck(study, output)
+    print_table(study, args.diagnostics_on)
+    print_summary(study, args.diagnostics_on)
+    finish_deck(study, args)
     return study
 
 
-if __name__ == "__main__":
-    arguments = sys.argv[1:]
-    # The residual figure exists while the sweep runs, so it has a live form; the convergence figure is
-    # the outcome of the whole sweep and only exists at the end, so it is written or not at all.
-    flags = {flag: flag in arguments for flag in ("--diagnostics-on", "--residuals-live",
-                                                  "--residuals-write", "--convergence-write",
-                                                  "--results-write")}
-    arguments = [argument for argument in arguments if argument not in flags]
-    if len(arguments) != 1:
-        sys.exit("usage: run.py <deck>.json | --all [--diagnostics-on] [--residuals-live] "
-                 "[--residuals-write] [--convergence-write] [--results-write]")
+def parse_arguments():
+    """The CLI. `args` is the whole run configuration -- there is no second dict built from it."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    # A positional with nargs='?' is allowed in a mutually exclusive group, which is what states
+    # "a deck or --all, exactly one" declaratively rather than by counting leftover tokens.
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("deck", nargs="?", help="path to a deck")
+    target.add_argument("--all", action="store_true", help="every deck under <dim>D/")
+    parser.add_argument("--diagnostics-on", action="store_true",
+                        help="the wide table: error magnitudes, dU/aeuh, elements, cpp/py, Newton")
+    parser.add_argument("--results-write", action="store_true",
+                        help="write the record everything else is drawn from")
+    parser.add_argument("--convergence-write", action="store_true",
+                        help="write the error-against-h figure")
+    # The residual figure exists while the sweep runs, so it has a live form; the convergence figure
+    # is the outcome of the whole sweep and only exists at the end, so it is written or not at all.
+    parser.add_argument("--residuals-write", action="store_true",
+                        help="write the linear-solver residual figure")
+    parser.add_argument("--residuals-live", action="store_true",
+                        help="the same figure in a window that fills in as the sweep runs")
+    parser.add_argument("--traceback", action="store_true",
+                        help="full stack for a deck that raises under --all, which otherwise "
+                             "reports one line so the remaining decks still run")
+    parser.add_argument("--output-dir", type=pathlib.Path, default=DEFAULT_OUTPUT_DIR,
+                        help="parent of results/ and figures/ (default: alongside the decks)")
+    args = parser.parse_args()
+    args.live = None            # filled in below if a window can be opened at all
+    return args
 
-    output = {"diagnostics": flags["--diagnostics-on"],
-              "residuals": flags["--residuals-write"],
-              "convergence": flags["--convergence-write"],
-              "results": flags["--results-write"],
-              "live": None}
+
+if __name__ == "__main__":
+    args = parse_arguments()
 
     # Whether a window can open at all is decided here, on this machine, rather than left for the plot
     # process to discover: a batch or ssh session with no display still gets its figure, on disk.
-    live_residuals = flags["--residuals-live"]
-    if live_residuals and not plots_module().interactive():
+    if args.residuals_live and not plots_module().interactive():
         print("no display for --residuals-live: writing the residual figure instead")
-        output["residuals"], live_residuals = True, False
+        args.residuals_write, args.residuals_live = True, False
 
-    if live_residuals:
+    if args.residuals_live:
         from VnV.verification.live import LiveWindows
-        FIGURE_DIR.mkdir(exist_ok=True)
-        output["live"] = LiveWindows(FIGURE_DIR / "live.log")
+        figure_dir = args.output_dir / "figures"
+        figure_dir.mkdir(parents=True, exist_ok=True)
+        args.live = LiveWindows(figure_dir / "live.log")
 
     # Before the first table: the plugin load messages are the scene's, not a level's, so they belong
     # above the tables rather than interleaved with their rows.
     load_plugins()
     try:
-        if arguments[0] == "--all":
-            failed = [name for name, study in run_all(pathlib.Path(__file__).parent, output)
+        if args.all:
+            failed = [name for name, study in run_all(DECK_ROOT, args)
                       if study is None or not study.ok()]
         else:
-            study = run(arguments[0], output)
+            study = run(args.deck, args)
             failed = [] if study.ok() else [study.name]
     finally:
         # Even if the sweep raised: the windows drawn so far are worth keeping, and the pipe has to be
         # closed for the child to know nothing more is coming. It is never waited on -- that is what
         # frees the terminal while the figures stay up.
-        if output["live"] is not None:
-            output["live"].detach()
+        if args.live is not None:
+            args.live.detach()
 
     # Non-zero so a sweep can gate something. The tables above already say which metric fell short and
     # why, so this only names the decks.
