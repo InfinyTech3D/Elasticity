@@ -1,0 +1,99 @@
+load "gmsh"
+load "msh3"
+
+DEFAULT (T, 0.08)
+DEFAULT (radius, 0.1)
+DEFAULT (youngModulus, 10000.0)
+DEFAULT (poissonRatio, 0.3)
+DEFAULT (meshFile, "beam3d_circular_tet.msh")
+DEFAULT (outFile, "freefem_beam3d_torsion_out.txt")
+
+real Torque = $T;
+real radius = $radius;
+real E      = $youngModulus;
+real nu     = $poissonRatio;
+
+real mu     = E / (2.*(1.+nu));
+real lambda = E*nu / ((1.+nu)*(1.-2.*nu));
+
+mesh3 Th = gmshload3("$meshFile");
+
+// =============== Geometrie ===============
+real xmin=1e30, xmax=-1e30, ymin=1e30, ymax=-1e30, zmin=1e30, zmax=-1e30;
+for (int i = 0; i < Th.nv; i++) {
+    xmin = min(xmin, Th(i).x); xmax = max(xmax, Th(i).x);
+    ymin = min(ymin, Th(i).y); ymax = max(ymax, Th(i).y);
+    zmin = min(zmin, Th(i).z); zmax = max(zmax, Th(i).z);
+}
+real length = xmax - xmin;
+real yc = 0.5*(ymin+ymax);
+real zc = 0.5*(zmin+zmax);
+
+real J = pi*radius^4/2.;
+real G = mu;
+real thetaPrime = Torque/(G*J);
+real thetaTotal = thetaPrime*length;
+cout << "length=" << length << "  yc=" << yc << "  zc=" << zc << "  J=" << J << endl;
+cout << "theta' = " << thetaPrime << " rad/m,  theta_total = " << thetaTotal << " rad" << endl;
+if (abs(thetaTotal) > 0.1)
+    cout << " total torsion's angle : small-strain " << endl;
+
+
+fespace Wh(Th, [P1, P1, P1]);
+Wh [ux, uy, uz], [vx, vy, vz];
+
+
+varf vElasticity([ux, uy, uz], [vx, vy, vz]) =
+    int3d(Th)(
+          lambda*(dx(ux)+dy(uy)+dz(uz))*(dx(vx)+dy(vy)+dz(vz))
+        + 2.*mu*( dx(ux)*dx(vx) + dy(uy)*dy(vy) + dz(uz)*dz(vz) )
+        + mu*( dy(ux)+dx(uy) )*( dy(vx)+dx(vy) )
+        + mu*( dz(ux)+dx(uz) )*( dz(vx)+dx(vz) )
+        + mu*( dz(uy)+dy(uz) )*( dz(vy)+dy(vz) )
+    );
+
+matrix A = vElasticity(Wh, Wh);
+real[int] b(Wh.ndof);
+b = 0.0;
+ 
+func taux = 0.;
+func tauy = -(Torque/J)*(z-zc);
+func tauz =  (Torque/J)*(y-yc);
+
+varf vTraction([ux, uy, uz], [vx, vy, vz]) = int2d(Th, 2)(taux*vx + tauy*vy + tauz*vz);
+real[int] bTraction = vTraction(0, Wh);
+b += bTraction;
+
+cout << " Aire face charged (attendu " << pi*radius^2 << ") = "
+     << int2d(Th, 2)(1.) << endl;
+cout << "Applicated moment    (attendu " << Torque << ")       = "
+     << int2d(Th, 2)((y-yc)*tauz - (z-zc)*tauy) << endl;
+
+real tgv = 1e30;
+int nFixed = 0;
+for (int i = 0; i < Th.nv; i++) {
+    if (abs(Th(i).x - xmin) < 1e-6) {
+        A(3*i,   3*i)   = tgv;  b[3*i]   = 0.0;
+        A(3*i+1, 3*i+1) = tgv;  b[3*i+1] = 0.0;
+        A(3*i+2, 3*i+2) = tgv;  b[3*i+2] = 0.0;
+        nFixed++;
+    }
+} 
+
+set(A, solver=sparsesolver);
+real[int] sol = A^-1 * b;
+ux[] = sol;
+
+cout << " amplitude uy sur maillage : min=" << uy[].min
+     << "  max=" << uy[].max << endl;
+
+
+{
+    ofstream fout("$outFile");
+    fout.precision(12);
+    for (int i = 0; i < Th.nv; i++) {
+        fout << Th(i).x << " " << Th(i).y << " " << Th(i).z << " "
+             << sol[3*i] << " " << sol[3*i+1] << " " << sol[3*i+2] << endl;
+    }
+}
+ 
