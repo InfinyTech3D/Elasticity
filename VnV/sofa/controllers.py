@@ -43,8 +43,12 @@ class RegionPointLoad(Sofa.Core.Controller):
         self.force_field.forces.value = self.traction(rest[indices])
 
 
-class NodalFieldFiller(Sofa.Core.Controller):
-    """Fills a component's nodal Data field after init by sampling a function at the rest positions."""
+class SourceTermFiller(Sofa.Core.Controller):
+    """Fills a FEMSourceTerm's nodalSourceDensity after init by sampling a field at the rest positions.
+
+    Named for the one Data it writes rather than generically: both users are FEMSourceTerms, and a
+    parameter that is always passed the same value says less than the name does.
+    """
 
     def __init__(self, dofs, field, sample, *args, **kwargs):
         super().__init__(*args, **kwargs)

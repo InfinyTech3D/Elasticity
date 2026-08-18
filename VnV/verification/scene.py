@@ -5,17 +5,21 @@ import numpy as np
 from ..sofa.scene import Scene
 from ..sofa.conventions import (BOUNDARY_KIND, CONTAINER, ELEMENT_CPP, FACET_FIELD,
                                 VEC_BY_SPATIAL_DIM)
-from ..sofa.controllers import NodalFieldFiller, RegionClamp, RegionPointLoad, region_box
+from ..sofa.controllers import SourceTermFiller, RegionClamp, RegionPointLoad, region_box
 
 
 class MMSScene(Scene):
     """Scene whose boundary conditions are those of a manufactured solution."""
 
-    def __init__(self, geometry, material, force_field, element, resolution, solvers, mms,
-                 source_quadrature_degree):
-        super().__init__(geometry, material, force_field, element, resolution, solvers)
-        self.mms = mms
-        self.source_quadrature_degree = source_quadrature_degree
+    def __init__(self, deck, resolution):
+        """The deck stops here. `Scene` takes its arguments one by one because it is the generic
+        layer the validation suite will reuse, and a validation deck is a different shape; this
+        subclass is verification's own, so it may know what a Deck is and unpack one.
+        """
+        super().__init__(deck.geometry, deck.material, deck.force_field, deck.element,
+                         resolution, deck.solvers)
+        self.mms = deck.solution
+        self.source_quadrature_degree = deck.source_quadrature_degree
 
     def apply_bcs(self, beam):
         node = beam.beam
@@ -50,7 +54,7 @@ class MMSScene(Scene):
         bf = node.addObject('FEMSourceTerm', name='bodyForce',
                             template=f"{VEC},{ELEMENT_CPP[element]}",
                             quadratureDegree=self.source_quadrature_degree)
-        node.addObject(NodalFieldFiller(dofs=node.dofs, field=bf, sample=mms.source,
+        node.addObject(SourceTermFiller(dofs=node.dofs, field=bf, sample=mms.source,
                                         name='bodyForceCtrl'))
 
         boundary = BOUNDARY_KIND.get(element)
@@ -87,5 +91,5 @@ class MMSScene(Scene):
             load = child.addObject('FEMSourceTerm', name='traction', topology='@surface',
                                    template=f'{VEC},{ELEMENT_CPP[boundary]}',
                                    quadratureDegree=self.source_quadrature_degree)
-            child.addObject(NodalFieldFiller(dofs=child.surfaceDofs, field=load,
+            child.addObject(SourceTermFiller(dofs=child.surfaceDofs, field=load,
                                              sample=traction, name='tractionCtrl'))

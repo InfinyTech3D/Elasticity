@@ -117,9 +117,7 @@ def serve():
         deck = message["figure"]
         try:
             if "curves" in message:
-                # JSON turned the Newton iteration keys into strings on the way over.
-                curves = {int(key): values for key, values in message["curves"].items()}
-                figures[deck].add(message["label"], curves)
+                figures[deck].add(message["label"], message["curves"])
             else:
                 figures[deck] = plots.LivePlot(message["equation"], message["element"],
                                               message["levels"], message["tolerance"])

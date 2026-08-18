@@ -86,20 +86,26 @@ def pcg_diagnostics(linear):
     so the first two tokens of a line belong to the key; parsing the line as floats the way the
     Newton graph is parsed would read the iteration number as a residual. Returns None for a direct
     solver, which has no iterations to report.
+
+    The iteration number orders the solves and is then dropped, because ordering is all it is ever
+    used for -- the figure lays them end to end and never names one. Keeping it as a dict key would
+    mean carrying it through JSON, which stringifies keys, and every reader converting back before
+    sorting so that "10" does not come before "2".
     """
     graph = getattr(linear, 'graph', None) if linear is not None else None
     if graph is None:
         return None
 
-    curves = {}
+    solves = []
     for line in graph.value.splitlines():
         tokens = line.split()
         if len(tokens) < 3 or tokens[0] != "Error":
             continue
-        curves[int(tokens[1])] = [float(token) for token in tokens[2:]]
+        solves.append((int(tokens[1]), [float(token) for token in tokens[2:]]))
 
     tolerance = getattr(linear, 'tolerance', None)
-    return {"curves": curves, "tolerance": float(tolerance.value) if tolerance else None}
+    return {"curves": [residuals for _, residuals in sorted(solves)],
+            "tolerance": float(tolerance.value) if tolerance else None}
 
 
 def plots_module():
@@ -129,9 +135,7 @@ def build_level(deck, cells, root):
     # RegularGridTopology's `n` counts grid points, not cells: nodes = cells + 1 per axis, and its
     # spacing is extent/(n-1). Converting here keeps that the only place the two conventions meet.
     res = [count + 1 for count in cells]
-    MMSScene(geometry=deck.geometry, material=deck.material, force_field=deck.force_field,
-             element=deck.element, resolution=res, solvers=deck.solvers, mms=deck.solution,
-             source_quadrature_degree=deck.source_quadrature_degree).build(root)
+    MMSScene(deck, res).build(root)
 
 
 def add_visual_style(root):

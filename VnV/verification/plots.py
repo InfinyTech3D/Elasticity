@@ -116,15 +116,15 @@ def _frame(figure, axis, equation, element, tolerance):
 def _draw_level(axis, label, curves, tolerance, index, count):
     """One level: its solves laid end to end, coloured by verdict and stepped by refinement."""
     residuals, seams = [], []
-    for iteration in sorted(curves):
+    for solve in curves:                # already in iteration order; the number itself is not drawn
         if residuals:                   # not the first solve, so this point is a handover
             seams.append(len(residuals))
-        residuals.extend(curves[iteration])
+        residuals.extend(solve)
 
     # Each solve is tested against the floor in its own right, and the last value of each is where it
     # stopped, so one solve short of the floor condemns the level. Without a reported tolerance there
     # is nothing to test against and the level stays neutral.
-    converged = all(curves[key][-1] <= tolerance for key in curves) if tolerance else None
+    converged = all(solve[-1] <= tolerance for solve in curves) if tolerance else None
     colour = ramp_colour(converged, index, count)
 
     axis.plot(range(len(residuals)), residuals, color=colour, linewidth=1.8,
@@ -274,18 +274,14 @@ def _series(result):
 
 
 def _residual_levels(result):
-    """The residual figure's input: (label, curves) per level that has any, and the shared tolerance.
-
-    JSON keys are strings, so the Newton iteration numbers come back as text and have to be integers
-    again before anything sorts them -- `"10"` sorts before `"2"`.
-    """
+    """The residual figure's input: (label, curves) per level that has any, and the shared tolerance."""
     levels, tolerance = [], None
     for level in result["levels"]:
         pcg = level["pcg"]
         if not pcg or not pcg["curves"]:
             continue
         tolerance = pcg["tolerance"]
-        levels.append((level["label"], {int(key): values for key, values in pcg["curves"].items()}))
+        levels.append((level["label"], pcg["curves"]))
     return levels, tolerance
 
 
