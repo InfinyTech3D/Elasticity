@@ -35,13 +35,9 @@ DECK_ROOT = pathlib.Path(__file__).parent
 # compared on the same deck.
 DEFAULT_OUTPUT_DIR = DECK_ROOT
 
-# Drawing is an inspection concern, so this is loaded there rather than sitting in PLUGINS for every
-# headless sweep to pay for. It is what provides VisualStyle.
+# Drawing is an inspection concern, so add_visual_style requires this itself rather than putting it
+# in PLUGINS for every headless sweep to pay for. It is what provides VisualStyle.
 VISUAL_PLUGIN = "Sofa.Component.Visual"
-
-# The size --gui creates its window at. SofaGLFWBaseGUI's own default is 0 x 0, so a window has to be
-# given one; 800 x 600 is what runSofa passes.
-WINDOW_SIZE = (800, 600)
 
 
 def newton_diagnostics(newton):
@@ -129,7 +125,7 @@ def level_label(cells):
 
 
 def build_level(deck, cells, root):
-    """The scene for one mesh, on `root`. The sweep, --gui and createScene all build through here."""
+    """The scene for one mesh, on `root`. Both the sweep and createScene build through here."""
     # RegularGridTopology's `n` counts grid points, not cells: nodes = cells + 1 per axis, and its
     # spacing is extent/(n-1). Converting here keeps that the only place the two conventions meet.
     res = [count + 1 for count in cells]
@@ -285,66 +281,17 @@ def run(deck_path, args):
     return study
 
 
-def inspect(deck_path, args):
-    """One level of one deck, built but not stepped, in a window.
-
-    Not stepped on purpose. The point is the scene as it was assembled -- the regions, the selections
-    and the loads before anything moves -- and stepping it first would show only the answer, which the
-    tables already give. The GUI can animate it from there if that is what you want. Nothing is lost
-    by waiting: the controllers fill their Data on the init-done event, so a BoxROI's selection and a
-    clamp's indices are already there to read.
-
-    initRoot rather than init, because a viewer needs the bounding box that init does not compute --
-    with scene checking off, since that loads a plugin whose logging would land on top of everything.
-    MainLoop does not return until the window closes, which is why this is a mode and not a flag.
-    """
-    import SofaRuntime
-    import Sofa.Gui
-    import Sofa.Helper
-
-    # Here rather than in PLUGINS: a headless sweep must not pull in a GUI. SofaImGui is the reason
-    # this is worth doing at all -- it brings the scene graph and the Data panels, so a BoxROI's
-    # selection and a controller-filled Data can be read on the spot.
-    for plugin in ("SofaGLFW", "SofaImGui", VISUAL_PLUGIN):
-        SofaRuntime.importPlugin(plugin)
-
-    deck = Deck.load(deck_path)
-    cells, _ = deck.levels()[args.level]
-    root = Sofa.Core.Node("root")
-    add_visual_style(root)
-    build_level(deck, cells, root)
-    Sofa.Simulation.initRoot(root, False)
-
-    # runSofa's own start-up sequence, and it has to be mimicked rather than guessed at. Without a
-    # config directory BaseGUI leaves it at ".", and every artefact the GUI writes -- BaseViewer.ini,
-    # lastUsedGUI.ini, loadedPlugins.ini, imgui/settings.ini -- routes through it and lands in
-    # whatever directory the runner was started from. Without SetDimension the window is created at
-    # SofaGLFWBaseGUI's default of 0 x 0. Both before and after createGUI respectively, as runSofa
-    # does it: the config path is read while the GUI comes up, and the resolution is applied to a
-    # window that already exists.
-    Sofa.Gui.BaseGUI.SetConfigDirectoryPath(
-        os.path.join(Sofa.Helper.Utils.GetSofaUserLocalDirectory(), "config"), True)
-    Sofa.Gui.GUIManager.Init("VnV", "imgui")
-    if Sofa.Gui.GUIManager.createGUI(root) != 0:
-        sys.exit("--gui: no window could be created; is there a display?")
-    Sofa.Gui.GUIManager.SetDimension(*WINDOW_SIZE)
-    Sofa.Gui.GUIManager.CenterWindow()
-    print(f"\n  {deck.name} level {args.level} ({level_label(cells)}): built, not stepped."
-          f" Animate from the GUI. Close the window to exit.")
-    # The GUI owns the process from here, and a redirected run buffers stdout independently of the
-    # stderr SOFA logs to, so this lands after the window's own output without the flush.
-    sys.stdout.flush()
-    Sofa.Gui.GUIManager.MainLoop(root)
-    Sofa.Gui.GUIManager.closeGUI()
-
-
 def createScene(root):
     """runSofa entry point: `runSofa -l SofaPython3 run.py --argv <deck> --argv <level>`.
 
-    runSofa imports this file as a module named after it, so `__name__` is never "__main__" here and
-    the CLI below does not run -- one runner, two ways in, one scene builder between them. It only
-    builds, as --gui does: runSofa owns the init, the stepping and the window from here. Neither door
-    measures anything; the sweep is what reports norms.
+    One file, two jobs: `python -m VnV.verification.run` measures, runSofa looks. runSofa imports this
+    file as a module named after it, so `__name__` is never "__main__" here and the CLI below does not
+    run -- and both go through build_level, so what is inspected cannot drift from what is swept.
+
+    Building is all this does. runSofa owns the init, the stepping and the window, which is why the
+    scene arrives unsolved: the point is the setup, and the tables already report the answer. The
+    controllers have still run by the time you see it -- they fill their Data on the init-done event --
+    so a BoxROI's selection and a clamp's indices are there to read in the undeformed scene.
     """
     if len(sys.argv) != 3:
         sys.exit("run.py under runSofa expects: --argv <deck> --argv <level>")
@@ -379,36 +326,13 @@ def parse_arguments():
                              "reports one line so the remaining decks still run")
     parser.add_argument("--output-dir", type=pathlib.Path, default=DEFAULT_OUTPUT_DIR,
                         help="parent of results/ and figures/ (default: alongside the decks)")
-    # Inspection, not measurement: one level in a window, for the errors a table cannot localize.
-    parser.add_argument("--gui", action="store_true",
-                        help="build one level of one deck and open a window on it, without "
-                             "sweeping and without stepping it")
-    parser.add_argument("--level", type=int,
-                        help="which refinement level --gui builds; 0 is the deck's coarsest")
     args = parser.parse_args()
-
-    # Stated rather than defaulted: which mesh is being looked at is the first thing to know about an
-    # inspection, and the coarsest is a habit rather than an obvious choice.
-    if args.gui and args.level is None:
-        parser.error("--gui needs --level")
-    if args.level is not None and not args.gui:
-        parser.error("--level only means something with --gui")
-    # Nine blocking windows in a row is not an inspection.
-    if args.gui and args.all:
-        parser.error("--gui takes one deck, not --all")
-
     args.live = None            # filled in below if a window can be opened at all
     return args
 
 
 if __name__ == "__main__":
     args = parse_arguments()
-
-    if args.gui:
-        # Before the scene, as the sweep does it: plugin logging belongs above the table, not in it.
-        load_plugins()
-        inspect(resolve_deck(args.deck), args)
-        sys.exit()
 
     # Whether a window can open at all is decided here, on this machine, rather than left for the plot
     # process to discover: a batch or ssh session with no display still gets its figure, on disk.
