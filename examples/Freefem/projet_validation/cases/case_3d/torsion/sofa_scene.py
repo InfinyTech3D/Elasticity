@@ -11,30 +11,58 @@ MESH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mesh")
 DEFAULT_MESH_FILENAME = "beam3d_circular_tet.msh"
 
 
-def torsion_consistent_forces(nodes, end_faces, T, J, yc, zc): 
+def torsion_consistent_forces(nodes, end_faces, T, J, yc, zc):
+    """
+    Assemble les forces nodales consistantes pour la traction de torsion
+    t(y,z) = (-(T/J)*(z-zc), (T/J)*(y-yc)) sur la face chargee.
+
+    Comme t est lineaire sur chaque triangle P1 et phi_i est lineaire,
+    F_i = int_T phi_i * t dA se calcule EXACTEMENT (pas de quadrature
+    approchee necessaire) via la formule de la matrice de masse P1 :
+
+        F_i += (area / 12.0) * (2 * t(x_i) + t(x_j) + t(x_k))
+
+    Cela remplace l'ancienne version "lumpee" (F_i += t(x_i) * area / 3),
+    qui n'est exacte que si t est constante sur le triangle (ce qui etait
+    le cas pour la charge distribuee, mais pas pour la torsion).
+    """
     N = len(nodes)
     F = np.zeros((N, 3))
+
+    def traction(nid):
+        y, z = nodes[nid, 1], nodes[nid, 2]
+        dy, dz = y - yc, z - zc
+        ty = -(T / J) * dz
+        tz = (T / J) * dy
+        return ty, tz
+
     for tri in end_faces:
         pts = nodes[tri, :]
         v1 = pts[1] - pts[0]
         v2 = pts[2] - pts[0]
         area = 0.5 * np.linalg.norm(np.cross(v1, v2))
-        for nid in tri:
-            y, z = nodes[nid, 1], nodes[nid, 2]
-            dy, dz = y - yc, z - zc
-            ty = -(T / J) * dz
-            tz = (T / J) * dy
-            F[nid, 1] += ty * area / 3.0
-            F[nid, 2] += tz * area / 3.0
+
+        t_local = [traction(nid) for nid in tri]  # t_local[l] <-> tri[l]
+
+        for local_i in range(3):
+            nid_i = tri[local_i]
+            local_j, local_k = [l for l in range(3) if l != local_i]
+            ty_i, tz_i = t_local[local_i]
+            ty_j, tz_j = t_local[local_j]
+            ty_k, tz_k = t_local[local_k]
+
+            F[nid_i, 1] += (area / 12.0) * (2 * ty_i + ty_j + ty_k)
+            F[nid_i, 2] += (area / 12.0) * (2 * tz_i + tz_j + tz_k)
+
     return F
 
 
 def _check_small_strain(T, radius, young_modulus, poisson_ratio, length,
-                         theta_length_limit=0.1): 
+                         theta_length_limit=0.1):
     J = np.pi * radius**4 / 2.0
     G = young_modulus / (2.0 * (1.0 + poisson_ratio))
-    theta = T / (G * J)         
-    theta_total = theta * length  
+    theta = T / (G * J)
+    theta_total = theta * length
     if abs(theta_total) > theta_length_limit:
         print(
             f"estimated total Torsion's Angle  = {theta_total:.3g} rad "
@@ -63,8 +91,7 @@ def _verify_torsion(x0, u, radius, yc, zc, theta_total, tol_x=1e-6,
 
     angle0 = np.arctan2(z0e[valid] - zc, y0e[valid] - yc)
     angle1 = np.arctan2(z1e[valid] - zc, y1e[valid] - yc)
-    dangle = np.mod(angle1 - angle0 + np.pi, 2 * np.pi) - np.pi  
- 
+    dangle = np.mod(angle1 - angle0 + np.pi, 2 * np.pi) - np.pi
 
     ok_radius = r_rel_err.max() < radius_rel_tol
     ok_angle = abs(dangle.mean() - theta_total) < angle_abs_tol
@@ -83,7 +110,8 @@ def _verify_torsion(x0, u, radius, yc, zc, theta_total, tol_x=1e-6,
         "ux_mean": uxe.mean(), "ux_max_abs": np.abs(uxe).max(),
         "ok": ok_radius and ok_angle,
     }
- 
+
+
 def _default_mesh_path():
     return os.path.join(MESH_DIR, DEFAULT_MESH_FILENAME)
 
@@ -179,14 +207,13 @@ def create_scene_args(rootNode, mesh_file, T, radius, young_modulus, poisson_rat
         Beam.addObject('FixedProjectiveConstraint'
                     , name="dirichlet"
                     , indices=fixed_idx)
- 
+
         Beam.addObject('ConstantForceField'
                     , name="TorqueTraction"
                     , indices=list(range(N))
                     , forces=forces_list
                     , showArrowSize=0.0
                     , showColor=[1.0, 0.2, 0.0, 1.0])
- 
 
     return rootNode, dofs, nodes.copy()
 
